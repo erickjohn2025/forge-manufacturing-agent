@@ -5,6 +5,27 @@ export type ApprovalView = {
   currency: string; deliveryDate: string; reason: string; status: string;
 };
 
+export type FloorOrderView = {
+  id: string; code: string; customer: string; dueAt: string; status: string;
+  lineCount: number; ordered: number; allocated: number;
+};
+
+export type FloorStockView = {
+  id: string; kind: "PRODUCT" | "MATERIAL"; sku: string; name: string; unit: string;
+  onHand: number; reserved: number; available: number; safetyStock: number; shortage: boolean;
+};
+
+export type FloorEventView = {
+  id: string; domain: string; status: string; title: string; detail?: string; toolName?: string; occurredAt: string;
+};
+
+export type FloorView = {
+  orders: FloorOrderView[];
+  stock: FloorStockView[];
+  counts: { ordersDue: number; shortages: number; pendingApprovals: number; openRfqs: number; purchaseOrdersInFlight: number; activeJobs: number };
+  events: FloorEventView[];
+};
+
 export type QuoteView = {
   id: string; supplierName: string; unitPrice: number; currency: string; deliveryDate: string;
   eligible: boolean; reason?: string;
