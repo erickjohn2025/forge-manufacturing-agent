@@ -61,10 +61,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     authorized({ auth: session, request }) {
       const isLogin = request.nextUrl.pathname === "/login";
-      const isProtected = ["/objectives", "/configuration"].some((path) =>
+      const isProtected = request.nextUrl.pathname === "/" || ["/objectives", "/configuration", "/approvals", "/procurement", "/messages"].some((path) =>
         request.nextUrl.pathname.startsWith(path),
       );
-      if (isLogin && session) return Response.redirect(new URL("/objectives", request.nextUrl));
+      if (isLogin && session) return Response.redirect(new URL("/", request.nextUrl));
       return isProtected ? Boolean(session) : true;
     },
     jwt({ token, user }) {

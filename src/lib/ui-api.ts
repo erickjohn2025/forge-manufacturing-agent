@@ -1,9 +1,66 @@
-import type { ObjectiveEvent, ObjectiveState } from "./contracts";
+import { serializeObjectiveEvent, type ObjectiveEvent, type ObjectiveState } from "./contracts";
 
 export type ApprovalView = {
   id: string; supplierName: string; quantity: number; unitPrice: number; total: number;
   currency: string; deliveryDate: string; reason: string; status: string;
+  materialName?: string; objectiveId?: string; objectiveText?: string;
 };
+
+export type ApprovalsQueueView = { items: ApprovalView[]; canDecide: boolean };
+
+export type FloorOrderView = {
+  id: string; code: string; customer: string; dueAt: string; status: string;
+  lineCount: number; ordered: number; allocated: number;
+};
+
+export type FloorStockView = {
+  id: string; kind: "PRODUCT" | "MATERIAL"; sku: string; name: string; unit: string;
+  onHand: number; reserved: number; available: number; safetyStock: number; shortage: boolean;
+};
+
+export type FloorEventView = {
+  id: string; domain: string; status: string; title: string; detail?: string; toolName?: string; occurredAt: string;
+};
+
+export type FloorView = {
+  orders: FloorOrderView[];
+  stock: FloorStockView[];
+  counts: { ordersDue: number; shortages: number; pendingApprovals: number; openRfqs: number; purchaseOrdersInFlight: number; activeJobs: number };
+  events: FloorEventView[];
+};
+
+export type ProcurementQuoteView = {
+  id: string; supplierName: string; unitPrice: number; currency: string; quantityAvailable: number;
+  deliveryDate: string; status: string; eligible: boolean; rejectionReason?: string;
+};
+
+export type ProcurementRfqView = {
+  id: string; code: string; materialName: string; quantity: number; status: string; requiredAt: string;
+  recipients: Array<{ supplierName: string; sentAt?: string }>;
+  quotes: ProcurementQuoteView[];
+};
+
+export type ProcurementPoView = {
+  id: string; code: string; supplierName: string; status: string; currency: string; total: number; expectedAt: string;
+  lines: Array<{ id: string; materialName: string; quantity: number; receivedQuantity: number; unitPrice: number }>;
+};
+
+export type ProcurementReceiptView = {
+  id: string; purchaseOrderCode: string; receivedAt: string; quantity: number;
+};
+
+export type ProcurementView = {
+  rfqs: ProcurementRfqView[];
+  purchaseOrders: ProcurementPoView[];
+  receipts: ProcurementReceiptView[];
+};
+
+export type MessageView = {
+  id: string; direction: string; channel: string; status: string;
+  fromAddress: string; toAddress: string; counterpart: string; counterpartKey: string; body: string; createdAt: string;
+};
+
+export type MessageLogView = { items: MessageView[]; nextCursor?: string };
 
 export type QuoteView = {
   id: string; supplierName: string; unitPrice: number; currency: string; deliveryDate: string;
@@ -86,7 +143,11 @@ export function normalizeObjective(input: unknown): ObjectiveView {
     text: text(raw.text ?? raw.prompt ?? raw.description ?? raw.objectiveText, "Manufacturing objective"),
     status: (raw.state ?? raw.status ?? "PLANNING") as ObjectiveState,
     createdAt: text(raw.createdAt, new Date().toISOString()),
-    events: [...actionEvents, ...stepEvents],
+    events: [...actionEvents, ...stepEvents].map((event: Record<string, unknown>) => serializeObjectiveEvent({
+      id: text(event.id), domain: event.domain as ObjectiveEvent["domain"], status: event.status as ObjectiveEvent["status"],
+      title: text(event.title), detail: text(event.detail) || undefined,
+      occurredAt: text(event.occurredAt, raw.createdAt), toolName: text(event.toolName) || undefined, payload: event.payload,
+    })),
     steps: Array.isArray(raw.steps) ? raw.steps.map((step: any) => ({
       domain: step.domain, status: step.status, title: text(step.title), detail: text(step.detail) || undefined,
     })) : [],

@@ -5,11 +5,17 @@ import { ApiError, apiError } from "@/lib/http";
 import { requireTenant } from "@/lib/tenant";
 import { normalizeTzPhone } from "@/payments/provider";
 
-const updateSchema = z.object({ manufacturerPaymentPhone: z.string().trim().min(1).max(30) });
-
 function maskPhone(phone?: string | null) {
   return phone ? `${phone.slice(0, 4)}•••${phone.slice(-3)}` : undefined;
 }
+
+const patchSchema = z.object({
+  autoPurchaseLimit: z.number().finite().nonnegative().optional(),
+  defaultSafetyStock: z.number().finite().nonnegative().optional(),
+  manufacturerPaymentPhone: z.string().trim().min(1).max(30).optional(),
+}).refine((value) => Object.values(value).some((item) => item !== undefined), {
+  message: "Provide at least one configuration value",
+});
 
 export async function GET() {
   try {
@@ -32,6 +38,7 @@ export async function GET() {
       inboundNumber: business.inboundNumber, smsUsers, callbackUrl, callbackStable,
       manufacturerPaymentPhone: role === "ADMIN" ? business.manufacturerPaymentPhone : maskPhone(business.manufacturerPaymentPhone),
       canManagePayments: role === "ADMIN",
+      canManagePolicy: role === "ADMIN",
       paymentMode: process.env.ZENOPAY_API_KEY ? "ZenoPay" : "Demo",
       demoResetEnabled: process.env.DEMO_MODE === "true",
     });
@@ -41,16 +48,25 @@ export async function GET() {
 export async function PATCH(request: Request) {
   try {
     const { businessId } = await requireTenant(["ADMIN"]);
-    const input = updateSchema.parse(await request.json());
-    const phone = normalizeTzPhone(input.manufacturerPaymentPhone);
-    if (!phone) throw new ApiError(422, "Enter a Tanzanian number, for example 0768967257");
+    const input = patchSchema.parse(await request.json());
+    const phone = input.manufacturerPaymentPhone === undefined
+      ? undefined
+      : normalizeTzPhone(input.manufacturerPaymentPhone);
+    if (input.manufacturerPaymentPhone !== undefined && !phone) {
+      throw new ApiError(422, "Enter a Tanzanian number, for example 0768967257");
+    }
     const business = await db.business.update({
       where: { id: businessId },
-      data: { manufacturerPaymentPhone: phone },
-      select: { manufacturerPaymentPhone: true },
+      data: {
+        ...(input.autoPurchaseLimit !== undefined ? { autoPurchaseLimit: input.autoPurchaseLimit } : {}),
+        ...(input.defaultSafetyStock !== undefined ? { defaultSafetyStock: input.defaultSafetyStock } : {}),
+        ...(phone !== undefined ? { manufacturerPaymentPhone: phone } : {}),
+      },
     });
-    return NextResponse.json(business);
-  } catch (error) {
-    return apiError(error);
-  }
+    return NextResponse.json({
+      autoPurchaseLimit: Number(business.autoPurchaseLimit),
+      defaultSafetyStock: Number(business.defaultSafetyStock),
+      manufacturerPaymentPhone: business.manufacturerPaymentPhone,
+    });
+  } catch (error) { return apiError(error); }
 }
