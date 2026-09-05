@@ -17,3 +17,6 @@ export const BoxIcon = (props: IconProps) => <Icon {...props}><path d="m21 8-9 5
 export const LogoutIcon = (props: IconProps) => <Icon {...props}><path d="M10 17l5-5-5-5M15 12H3"/><path d="M13 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/></Icon>;
 export const MessageIcon = (props: IconProps) => <Icon {...props}><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8Z"/><path d="M8 9h8M8 13h5"/></Icon>;
 export const FactoryIcon = (props: IconProps) => <Icon {...props}><path d="M3 21V9l6 3V8l6 4V4h4l2 17H3Z"/><path d="M7 17h1M12 17h1M17 17h1"/></Icon>;
+export const FloorIcon = (props: IconProps) => <Icon {...props}><path d="M4 10h16v10H4zM8 10V6h8v4M4 14h16M12 14v6"/></Icon>;
+export const StampIcon = (props: IconProps) => <Icon {...props}><path d="M8 14h8l2 3H6l2-3Z"/><path d="M10 14V8a2 2 0 1 1 4 0v6"/><path d="M6 20h12"/></Icon>;
+export const PipelineIcon = (props: IconProps) => <Icon {...props}><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="13" width="7" height="7" rx="1.5"/><path d="M10 7.5h2.5a2 2 0 0 1 2 2V13"/></Icon>;
