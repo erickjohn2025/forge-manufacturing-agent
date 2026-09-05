@@ -48,8 +48,8 @@ export function ApprovalsInbox() {
       <div className="why-box"><AlertIcon /><p><strong>Why this supplier</strong>{approval.reason}</p></div>
       {approval.objectiveId && <Link className="approval-objective-link" href={`/objectives/${approval.objectiveId}`}>{approval.objectiveText ?? "Open objective"}</Link>}
       <div className="decision-actions">
-        <button className="secondary-button" disabled={pendingId === approval.id} onClick={() => decide(approval.id, "reject")}>Reject</button>
-        <button className="primary-button" disabled={pendingId === approval.id} onClick={() => decide(approval.id, "approve")}>{pendingId === approval.id ? "Working…" : "Approve purchase"}<ArrowIcon /></button>
+        <button className="secondary-button" aria-label={`Reject purchase from ${approval.supplierName}`} disabled={pendingId === approval.id} onClick={() => decide(approval.id, "reject")}>Reject</button>
+        <button className="primary-button" aria-label={`Approve purchase from ${approval.supplierName}`} disabled={pendingId === approval.id} onClick={() => decide(approval.id, "approve")}>{pendingId === approval.id ? "Working…" : "Approve purchase"}<ArrowIcon /></button>
       </div>
     </section>)}
   </div>;

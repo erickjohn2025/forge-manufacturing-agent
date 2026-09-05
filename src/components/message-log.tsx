@@ -55,6 +55,6 @@ export function MessageLog() {
         </li>)}
       </ol>
     </section>)}
-    {nextCursor && <button className="secondary-button" disabled={loading} onClick={() => load(nextCursor)}>{loading ? "Loading…" : "Load older messages"}</button>}
+    {nextCursor && <button className="secondary-button" aria-label="Load older SMS messages" disabled={loading} onClick={() => load(nextCursor)}>{loading ? "Loading…" : "Load older messages"}</button>}
   </div>;
 }

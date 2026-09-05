@@ -18,7 +18,7 @@ export default function LoginPage() {
     startTransition(async () => {
       const result = await signIn("credentials", { email, password, redirect: false });
       if (result?.error) setError("That email or password doesn’t match our records.");
-      else { router.push("/objectives"); router.refresh(); }
+      else { router.push("/"); router.refresh(); }
     });
   }
 
