@@ -3,6 +3,7 @@ import type { ObjectiveEvent, ObjectiveState } from "./contracts";
 export type ApprovalView = {
   id: string; supplierName: string; quantity: number; unitPrice: number; total: number;
   currency: string; deliveryDate: string; reason: string; status: string;
+  materialName?: string; objectiveId?: string; objectiveText?: string;
 };
 
 export type FloorOrderView = {
