@@ -6,6 +6,7 @@ import {
   createPurchaseOrder, createRfq, evaluateSupplierQuotes, getApprovedSuppliers,
   planObjective, requestPurchaseApproval
 } from "@/domain";
+import { logInfo, logWarn, maskAddress } from "@/lib/logger";
 
 async function event(input: {
   businessId: string; objectiveId: string; domain: "PLAN" | "SOURCE" | "MAKE" | "DELIVER";
@@ -79,13 +80,18 @@ async function sendRfq(rfqId: string, businessId: string) {
   const adapter = getMessagingAdapter();
   const from = outboundSender(rfq.business.inboundNumber);
   for (const recipient of rfq.recipients) {
-    if (recipient.sentAt) continue;
+    if (recipient.sentAt) {
+      logInfo("rfq.sms.skipped", { businessId, rfqId, supplierId: recipient.supplierId, reason: "already_sent" });
+      continue;
+    }
     const message = `${rfq.business.name} needs ${Number(rfq.quantity).toLocaleString()} ${rfq.material.name} by ${rfq.requiredAt.toLocaleDateString("en-GB", { weekday: "long", timeZone: rfq.business.timezone })}. Please send your unit price, available quantity and earliest delivery date.`;
     const key = `rfq:${rfq.id}:${recipient.supplierId}`;
+    logInfo("rfq.sms.sending", { businessId, rfqId, rfqCode: rfq.code, supplierId: recipient.supplierId, from: maskAddress(from), to: maskAddress(recipient.supplier.phone), quantity: Number(rfq.quantity), requiredAt: rfq.requiredAt.toISOString() });
     const receipt = await adapter.send({ businessId, from, to: [recipient.supplier.phone], message, idempotencyKey: key });
     const provider = receipt.recipients[0];
     const accepted = providerAccepted(provider);
     await persistOutbound({ businessId, from, to: recipient.supplier.phone, body: message, providerId: provider?.providerMessageId, key, status: accepted ? "SENT" : "FAILED" });
+    logInfo("rfq.sms.result", { businessId, rfqId, supplierId: recipient.supplierId, accepted, providerStatus: provider?.status, providerMessageId: provider?.providerMessageId });
     if (!accepted) throw new Error(`SMS provider rejected RFQ delivery to ${recipient.supplier.name}: ${provider?.status ?? "unknown status"}`);
     await db.rfqRecipient.update({ where: { id: recipient.id }, data: { sentAt: new Date(), providerId: provider?.providerMessageId } });
   }
@@ -111,7 +117,11 @@ async function sendPurchaseOrder(purchaseOrderId: string, businessId: string) {
 export async function runObjectiveCycle(objectiveId: string) {
   const objective = await db.objective.findUniqueOrThrow({ where: { id: objectiveId }, include: { business: true } });
   const { businessId } = objective;
-  if (["COMPLETE", "FAILED", "BLOCKED"].includes(objective.state)) return;
+  logInfo("objective.cycle.started", { objectiveId, businessId, state: objective.state, targetDueAt: objective.targetDueAt?.toISOString() });
+  if (["COMPLETE", "FAILED", "BLOCKED"].includes(objective.state)) {
+    logInfo("objective.cycle.skipped", { objectiveId, state: objective.state, reason: "terminal_state" });
+    return;
+  }
 
   if (objective.state === "PLANNING") {
     const plan = await planObjective(db, { businessId, dueAt: objective.targetDueAt ?? new Date() });
@@ -120,6 +130,15 @@ export async function runObjectiveCycle(objectiveId: string) {
     await db.objectiveStep.updateMany({ where: { objectiveId, domain: "PLAN" }, data: { status: "COMPLETED", detail: plan.observations.join(" · ") } });
 
     const shortages = plan.data.materials.filter((item) => item.netShortage > 0);
+    logInfo("objective.plan.completed", {
+      objectiveId,
+      businessId,
+      dueAt: (objective.targetDueAt ?? new Date()).toISOString(),
+      orderCount: plan.data.orderCount,
+      orderIds: plan.data.orderIds,
+      production: plan.data.production.map((item) => ({ productId: item.productId, demand: item.demand, available: item.finishedGoodsAvailable, required: item.productionRequired })),
+      materials: plan.data.materials.map((item) => ({ materialId: item.materialId, gross: item.grossRequirement, safetyStock: item.safetyStock, available: item.available, incoming: item.confirmedIncoming, shortage: item.netShortage })),
+    });
     if (shortages.length) {
       await db.objectiveStep.updateMany({ where: { objectiveId, domain: "SOURCE" }, data: { status: "ACTIVE" } });
       for (const shortage of shortages) {
@@ -142,6 +161,10 @@ export async function runObjectiveCycle(objectiveId: string) {
       return;
     }
     await db.objective.update({ where: { id: objectiveId }, data: { state: "IN_PROGRESS" } });
+    if (plan.data.orderCount === 0) {
+      logWarn("objective.plan.no_eligible_orders", { objectiveId, businessId, dueAt: (objective.targetDueAt ?? new Date()).toISOString(), reason: "No CONFIRMED or ALLOCATED orders exist on or before the due date" });
+      await event({ businessId, objectiveId, domain: "PLAN", status: "COMPLETED", title: "No due orders require operational work", detail: "The matching orders are already fulfilled or no eligible orders exist. Send RESET HERO before replaying the demo.", toolName: "plan_objective", key: `${objectiveId}:no-eligible-orders` });
+    }
     return;
   }
 

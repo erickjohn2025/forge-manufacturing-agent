@@ -10,9 +10,11 @@ import {
   planObjective,
   recordGoodsReceipt,
   recordProductionCompletion,
+  resetHeroScenario,
   verifyObjectiveCompletion,
 } from "@/domain";
 import { dateAtLocalEndOfDay } from "@/lib/dates";
+import { logInfo } from "@/lib/logger";
 
 export type StaffSmsCommand =
   | { kind: "APPROVE"; reference?: string }
@@ -21,6 +23,7 @@ export type StaffSmsCommand =
   | { kind: "COMPLETE_PRODUCTION"; reference?: string; actualQuantity?: number }
   | { kind: "STATUS" }
   | { kind: "HELP" }
+  | { kind: "RESET_HERO" }
   | { kind: "OBJECTIVE"; text: string };
 
 const normalizedReference = (value?: string) => value?.trim().toUpperCase();
@@ -30,6 +33,7 @@ export function parseStaffSms(text: string): StaffSmsCommand {
   const value = text.trim().replace(/\s+/g, " ");
   if (/^(help|commands|menu)$/i.test(value)) return { kind: "HELP" };
   if (/^(status|update|progress|what(?:'s| is) happening)\??$/i.test(value)) return { kind: "STATUS" };
+  if (/^(reset hero|start over)[.!]?$/i.test(value)) return { kind: "RESET_HERO" };
 
   const approval = value.match(/^(approve|approved|yes[,]? approve)(?:\s+(?:purchase|approval|po)?\s*([a-z0-9-]+))?[.!]?$/i);
   if (approval) return { kind: "APPROVE", reference: normalizedReference(approval[2]) };
@@ -150,7 +154,15 @@ export async function handleStaffSms(
   enqueue: (objectiveId: string) => Promise<unknown> = enqueueObjective,
 ): Promise<string> {
   const command = parseStaffSms(input.text);
-  if (command.kind === "HELP") return "Commands: send an objective; STATUS; APPROVE [RFQ code]; REJECT [RFQ code]; RECEIVED [PO code]; JOB [PJ code] FINISHED, PRODUCED [quantity].";
+  logInfo("sms.staff.command", { businessId: input.businessId, userId: input.userId, messageId: input.messageId, role: input.role, commandKind: command.kind, reference: "reference" in command ? command.reference : undefined });
+  if (command.kind === "HELP") return "Commands: send an objective; STATUS; APPROVE [RFQ code]; REJECT [RFQ code]; RECEIVED [PO code]; JOB [PJ code] FINISHED, PRODUCED [quantity]. In demo mode, an ADMIN can send RESET HERO.";
+  if (command.kind === "RESET_HERO") {
+    requireRole(input.role, ["ADMIN"]);
+    if (process.env.DEMO_MODE !== "true") throw new Error("Hero reset is available only in demo mode");
+    const baseline = await resetHeroScenario(db, input.businessId, { preserveMessageId: input.messageId });
+    logInfo("demo.reset_by_sms", { businessId: input.businessId, userId: input.userId, messageId: input.messageId, ...baseline });
+    return "Hero scenario reset: 3 Friday orders, 5,000 units demand, 1,000 finished units, and a 1,400 packaging shortage. Send the objective again to begin.";
+  }
   if (command.kind === "STATUS") {
     const objective = await db.objective.findFirst({ where: { businessId: input.businessId, state: { notIn: ["COMPLETE", "FAILED"] } }, include: { events: { orderBy: { occurredAt: "desc" }, take: 1 } }, orderBy: { createdAt: "desc" } });
     return objective ? `Objective ${objective.state.replaceAll("_", " ")}: ${objective.events[0]?.title ?? objective.text}` : "No active manufacturing objective.";
@@ -185,6 +197,14 @@ export async function handleStaffSms(
       { domain: "DELIVER", title: "Prepare orders for dispatch", sequence: 4 },
     ] },
   } });
+  logInfo("objective.created_from_sms", {
+    businessId: input.businessId,
+    objectiveId: objective.id,
+    messageId: input.messageId,
+    targetDueAt: objective.targetDueAt?.toISOString(),
+    interpretationSource: interpreted.source,
+    confidence: interpreted.confidence,
+  });
   await enqueue(objective.id);
   return `Objective accepted: ${command.text} I will coordinate PLAN, SOURCE, MAKE and DELIVER. Text STATUS anytime.`;
 }

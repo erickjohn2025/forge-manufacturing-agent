@@ -27,6 +27,11 @@ describe("factory SMS commands", () => {
     expect(parseStaffSms("status")).toEqual({ kind: "STATUS" });
     expect(parseStaffSms("help")).toEqual({ kind: "HELP" });
   });
+
+  it("recognises the explicit demo reset command", () => {
+    expect(parseStaffSms("RESET HERO")).toEqual({ kind: "RESET_HERO" });
+    expect(parseStaffSms("start over")).toEqual({ kind: "RESET_HERO" });
+  });
 });
 
 describe("business-local objective dates", () => {

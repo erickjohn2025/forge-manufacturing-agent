@@ -10,6 +10,7 @@ import { SupplierQuoteExtractor } from "@/agent/quote-extractor";
 import { recordSupplierResponse } from "@/domain";
 import { enqueueObjective } from "@/agent/queue";
 import { handleStaffSms } from "@/agent/sms-operations";
+import { logError, logInfo, logWarn, maskAddress } from "@/lib/logger";
 
 async function sendReply(input: { businessId: string; from: string; to: string; body: string; fingerprint: string; simulator: boolean }) {
   const receipt = await getMessagingAdapter().send({ businessId: input.businessId, from: input.from, to: [input.to], message: input.body, idempotencyKey: input.fingerprint });
@@ -55,11 +56,19 @@ export async function POST(request: Request) {
       ? new SimulatorSmsAdapter()
       : new AfricasTalkingSmsAdapter({ username: process.env.AFRICASTALKING_USERNAME!, apiKey: process.env.AFRICASTALKING_API_KEY!, senderId: process.env.AFRICASTALKING_SENDER_ID });
     const inbound = adapter.receive(payload);
+    logInfo("sms.inbound.received", {
+      provider: inbound.provider,
+      providerMessageId: inbound.providerMessageId,
+      from: maskAddress(inbound.from),
+      to: maskAddress(inbound.to),
+      textLength: inbound.text.length,
+    });
     const business = await db.business.findFirst({ where: { inboundNumber: inbound.to } });
     if (!business) throw new ApiError(404, "No business is configured for this inbound number");
     const fingerprint = smsPayloadFingerprint(inbound);
     const existing = await db.externalMessage.findUnique({ where: { businessId_fingerprint: { businessId: business.id, fingerprint } } });
     if (existing) {
+      logWarn("sms.inbound.duplicate", { businessId: business.id, messageId: existing.id, providerMessageId: inbound.providerMessageId });
       const savedReply = savedStaffReply(existing.providerPayload);
       if (!savedReply) return NextResponse.json({ accepted: true, duplicate: true });
       const replyFingerprint = `staff-reply:${existing.id}`;
@@ -78,6 +87,12 @@ export async function POST(request: Request) {
       db.businessMembership.findFirst({ where: { businessId: business.id, user: { phone: inbound.from } }, include: { user: true } }),
     ]);
     if (!supplier && !membership) throw new ApiError(422, "Sender is not registered as a supplier or factory user");
+    logInfo("sms.inbound.matched", {
+      businessId: business.id,
+      messageId: message.id,
+      senderType: membership ? "staff" : "supplier",
+      senderId: membership?.userId ?? supplier?.id,
+    });
     if (membership) {
       let body: string;
       let commandAccepted = true;
@@ -95,6 +110,7 @@ export async function POST(request: Request) {
         data: { providerPayload: { ...(payload as Record<string, string>), _forgeStaffReply: { body, commandAccepted } } },
       });
       const reply = await sendReply({ businessId: business.id, from: inbound.to, to: inbound.from, body, fingerprint: `staff-reply:${message.id}`, simulator });
+      logInfo("sms.staff.processed", { businessId: business.id, messageId: message.id, commandAccepted, replySent: reply.accepted, replyProviderMessageId: reply.providerMessageId });
       return NextResponse.json({ accepted: true, commandAccepted, replySent: reply.accepted });
     }
     if (!supplier) throw new ApiError(422, "Sender is not a configured supplier");
@@ -102,6 +118,7 @@ export async function POST(request: Request) {
       businessId: business.id, status: { in: ["SENT", "QUOTING"] },
       recipients: { some: { supplierId: supplier.id } }
     }, include: { material: true } });
+    logInfo("sms.supplier.rfq_match", { businessId: business.id, messageId: message.id, supplierId: supplier.id, openRfqCount: rfqs.length });
     if (rfqs.length !== 1) throw new ApiError(409, "Supplier response cannot be matched to one open RFQ");
     const rfq = rfqs[0];
     const extracted = await new SupplierQuoteExtractor().extract({
@@ -118,7 +135,11 @@ export async function POST(request: Request) {
       currency: extracted.currency, quantityAvailable: extracted.quantityAvailable,
       deliveryAt: new Date(`${extracted.deliveryDate}T12:00:00.000Z`), rawMessageId: message.id
     });
+    logInfo("sms.supplier.quote_recorded", { businessId: business.id, objectiveId: rfq.objectiveId, rfqId: rfq.id, quoteId: quote.id, supplierId: supplier.id, extractionSource: extracted.source });
     if (rfq.objectiveId) await enqueueObjective(rfq.objectiveId);
     return NextResponse.json({ accepted: true, quoteId: quote.id, extractionSource: extracted.source });
-  } catch (error) { return apiError(error); }
+  } catch (error) {
+    logError("sms.inbound.failed", error);
+    return apiError(error);
+  }
 }

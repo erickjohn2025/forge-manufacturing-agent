@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { z } from "zod";
 import { inferObjectiveDueDate } from "@/lib/dates";
+import { logInfo, logWarn } from "@/lib/logger";
 
 const resultSchema = z.object({
   desiredOutcome: z.string().min(1),
@@ -19,7 +20,11 @@ export async function interpretObjective(text: string, now = new Date()): Promis
     confidence: 0.8,
     source: "deterministic-fallback"
   };
-  if (!process.env.OPENAI_API_KEY) return fallback;
+  logInfo("objective.interpret.started", { currentDate: now.toISOString(), textLength: text.length, fallbackDueDate: fallback.dueDate });
+  if (!process.env.OPENAI_API_KEY) {
+    logInfo("objective.interpret.completed", { source: fallback.source, dueDate: fallback.dueDate, reason: "openai_key_missing" });
+    return fallback;
+  }
   try {
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const response = await client.responses.create({
@@ -37,8 +42,10 @@ export async function interpretObjective(text: string, now = new Date()): Promis
       } } }
     });
     const parsed = resultSchema.parse(JSON.parse(response.output_text));
+    logInfo("objective.interpret.completed", { source: "openai", dueDate: parsed.dueDate, domains: parsed.domains, confidence: parsed.confidence });
     return { ...parsed, source: "openai" };
-  } catch {
+  } catch (error) {
+    logWarn("objective.interpret.fallback", { reason: error instanceof Error ? error.message : String(error), dueDate: fallback.dueDate });
     return fallback;
   }
 }
