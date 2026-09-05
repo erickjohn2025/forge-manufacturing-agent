@@ -15,11 +15,13 @@ import {
 } from "@/domain";
 import { dateAtLocalEndOfDay } from "@/lib/dates";
 import { logInfo } from "@/lib/logger";
+import { sendPurchaseOrder } from "./engine";
 
 export type StaffSmsCommand =
   | { kind: "APPROVE"; reference?: string }
   | { kind: "REJECT"; reference?: string }
   | { kind: "RECEIVE"; reference?: string }
+  | { kind: "RESEND_PO"; reference?: string }
   | { kind: "COMPLETE_PRODUCTION"; reference?: string; actualQuantity?: number }
   | { kind: "STATUS" }
   | { kind: "HELP" }
@@ -42,6 +44,8 @@ export function parseStaffSms(text: string): StaffSmsCommand {
 
   const receipt = value.match(/^(?:receive|received|goods received|delivery received)(?:\s+(?:po\s*)?([a-z]+-?\d+))?[.!]?$/i);
   if (receipt) return { kind: "RECEIVE", reference: normalizedReference(receipt[1]) };
+  const resend = value.match(/^(?:resend|retry)(?:\s+(?:po|purchase order))?\s*([a-z]+-?\d+)[.!]?$/i);
+  if (resend) return { kind: "RESEND_PO", reference: normalizedReference(resend[1]) };
 
   const jobFirst = value.match(/(?:job\s+)?(pj-?\d+).*?(?:finished|complete|completed|produced)(?:\D+([\d,]+))?/i);
   const quantityFirst = value.match(/(?:finished|complete|completed|produced)\D+([\d,]+).*?(?:job\s+)?(pj-?\d+)/i);
@@ -168,7 +172,7 @@ export async function handleStaffSms(
 ): Promise<string> {
   const command = parseStaffSms(input.text);
   logInfo("sms.staff.command", { businessId: input.businessId, userId: input.userId, messageId: input.messageId, role: input.role, commandKind: command.kind, reference: "reference" in command ? command.reference : undefined });
-  if (command.kind === "HELP") return "Commands: send an objective; STATUS; APPROVE [RFQ code]; REJECT [RFQ code]; RECEIVED [PO code]; JOB [PJ code] FINISHED, PRODUCED [quantity]. In demo mode, an ADMIN can send RESET HERO.";
+  if (command.kind === "HELP") return "Commands: send an objective; STATUS; APPROVE [RFQ code]; REJECT [RFQ code]; RESEND [PO code]; RECEIVED [PO code]; JOB [PJ code] FINISHED, PRODUCED [quantity]. In demo mode, an ADMIN can send RESET HERO.";
   if (command.kind === "RESET_HERO") {
     requireRole(input.role, ["ADMIN"]);
     if (process.env.DEMO_MODE !== "true") throw new Error("Hero reset is available only in demo mode");
@@ -191,6 +195,15 @@ export async function handleStaffSms(
   if (command.kind === "RECEIVE") {
     requireRole(input.role, ["ADMIN", "OPERATOR"]);
     return receivePurchaseOrder(db, input, command.reference);
+  }
+  if (command.kind === "RESEND_PO") {
+    requireRole(input.role, ["ADMIN", "APPROVER"]);
+    const po = await db.purchaseOrder.findFirst({
+      where: { businessId: input.businessId, code: command.reference, status: { not: "CANCELLED" } },
+    });
+    if (!po) throw new Error(`No purchase order matches ${command.reference ?? "that reference"}`);
+    await sendPurchaseOrder(po.id, input.businessId, { resendKey: input.messageId });
+    return `${po.code} confirmation was resubmitted to the supplier.`;
   }
   if (command.kind === "COMPLETE_PRODUCTION") {
     requireRole(input.role, ["ADMIN", "OPERATOR"]);

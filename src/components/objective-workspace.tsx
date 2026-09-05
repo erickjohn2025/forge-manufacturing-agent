@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import Link from "next/link";
 
 import type { ObjectiveDomain, ObjectiveEvent } from "@/lib/contracts";
-import { apiFetch, formatMoney, friendlyState, normalizeObjective, type ObjectiveView } from "@/lib/ui-api";
+import { ApiFetchError, apiFetch, formatMoney, friendlyState, normalizeObjective, type ObjectiveView } from "@/lib/ui-api";
 import { AlertIcon, ArrowIcon, BoxIcon, CheckIcon, ClockIcon, MessageIcon, SparkIcon } from "./icons";
 
 const domains: Array<{ id: ObjectiveDomain; label: string; caption: string }> = [
@@ -35,23 +35,29 @@ export function ObjectiveWorkspace({ objectiveId }: { objectiveId: string }) {
   const [notice, setNotice] = useState("");
   const [paymentPhone, setPaymentPhone] = useState("");
   const [pending, startTransition] = useTransition();
+  const [missing, setMissing] = useState(false);
   const load = useCallback(async () => {
     try { setObjective(normalizeObjective(await apiFetch<unknown>(`/api/objectives/${objectiveId}`))); setError(""); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Could not load this objective."); }
+    catch (cause) {
+      if (cause instanceof ApiFetchError && cause.status === 404) setMissing(true);
+      setError(cause instanceof Error ? cause.message : "Could not load this objective.");
+    }
   }, [objectiveId]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
+    if (missing) return;
     const stream = new EventSource(`/api/objectives/${objectiveId}/stream`);
     stream.onmessage = () => void load();
     stream.addEventListener("objective-event", () => void load());
     stream.addEventListener("state", () => void load());
     return () => stream.close();
-  }, [objectiveId, load]);
+  }, [objectiveId, load, missing]);
   useEffect(() => {
+    if (missing) return;
     const timer = window.setInterval(() => { if (document.visibilityState === "visible") void load(); }, 3_000);
     return () => window.clearInterval(timer);
-  }, [load]);
+  }, [load, missing]);
   useEffect(() => {
     if (objective?.payment?.status !== "PENDING" || !objective.purchaseOrderId) return;
     const timer = setInterval(() => {

@@ -98,20 +98,36 @@ async function sendRfq(rfqId: string, businessId: string) {
   await db.rfq.update({ where: { id: rfq.id }, data: { status: "SENT" } });
 }
 
-async function sendPurchaseOrder(purchaseOrderId: string, businessId: string) {
+export async function sendPurchaseOrder(
+  purchaseOrderId: string,
+  businessId: string,
+  options: { resendKey?: string } = {},
+) {
   const po = await db.purchaseOrder.findFirstOrThrow({
     where: { id: purchaseOrderId, businessId },
     include: { business: true, supplier: true, lines: { include: { material: true } } }
   });
   const line = po.lines[0];
   const message = `${po.code} confirmed: ${Number(line.quantity).toLocaleString()} ${line.material.name} at ${po.currency} ${Number(line.unitPrice).toLocaleString()} each. Delivery ${po.expectedAt.toLocaleDateString("en-GB", { weekday: "long" })}.`;
-  const key = `po:${po.id}:confirmation`;
+  const key = options.resendKey
+    ? `po:${po.id}:confirmation:resend:${options.resendKey}`
+    : `po:${po.id}:confirmation`;
   const from = outboundSender(po.business.inboundNumber);
+  const existing = await db.externalMessage.findUnique({
+    where: { businessId_fingerprint: { businessId, fingerprint: key } },
+  });
+  if (existing?.status === "SENT" || existing?.status === "DELIVERED") {
+    logInfo("po.sms.skipped", { businessId, purchaseOrderId: po.id, poCode: po.code, reason: "already_accepted", messageId: existing.id, providerMessageId: existing.providerId });
+    return existing;
+  }
+  logInfo("po.sms.sending", { businessId, purchaseOrderId: po.id, poCode: po.code, supplierId: po.supplierId, from: maskAddress(from), to: maskAddress(po.supplier.phone), resend: Boolean(options.resendKey) });
   const receipt = await getMessagingAdapter().send({ businessId, from, to: [po.supplier.phone], message, idempotencyKey: key });
   const provider = receipt.recipients[0];
   const accepted = providerAccepted(provider);
-  await persistOutbound({ businessId, from, to: po.supplier.phone, body: message, providerId: provider?.providerMessageId, key, status: accepted ? "SENT" : "FAILED" });
+  const stored = await persistOutbound({ businessId, from, to: po.supplier.phone, body: message, providerId: provider?.providerMessageId, key, status: accepted ? "SENT" : "FAILED" });
+  logInfo("po.sms.result", { businessId, purchaseOrderId: po.id, poCode: po.code, supplierId: po.supplierId, accepted, providerStatus: provider?.status, providerMessageId: provider?.providerMessageId, messageId: stored.id, resend: Boolean(options.resendKey) });
   if (!accepted) throw new Error(`SMS provider rejected ${po.code} confirmation: ${provider?.status ?? "unknown status"}`);
+  return stored;
 }
 
 export async function runObjectiveCycle(objectiveId: string) {

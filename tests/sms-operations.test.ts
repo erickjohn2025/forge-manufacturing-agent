@@ -13,6 +13,7 @@ describe("factory SMS commands", () => {
   it("recognises approval and receiving commands", () => {
     expect(parseStaffSms("Approve RFQ-104")).toEqual({ kind: "APPROVE", reference: "RFQ-104" });
     expect(parseStaffSms("Received PO-204")).toEqual({ kind: "RECEIVE", reference: "PO-204" });
+    expect(parseStaffSms("Resend PO-204")).toEqual({ kind: "RESEND_PO", reference: "PO-204" });
   });
 
   it("extracts a job code and actual output from a natural supervisor update", () => {

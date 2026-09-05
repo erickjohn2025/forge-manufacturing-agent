@@ -106,10 +106,17 @@ export type ObjectiveView = {
   summary?: Record<string, string | number>;
 };
 
+export class ApiFetchError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "ApiFetchError";
+  }
+}
+
 export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error?.message || payload.error || payload.message || `Request failed (${response.status})`);
+  if (!response.ok) throw new ApiFetchError(payload.error?.message || payload.error || payload.message || `Request failed (${response.status})`, response.status);
   return (payload.data ?? payload) as T;
 }
 
