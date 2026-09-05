@@ -42,10 +42,19 @@ function providerAccepted(recipient?: { providerMessageId?: string; status: stri
   return Boolean(recipient?.providerMessageId && recipient.providerMessageId !== "None" && /success|sent|queued/i.test(recipient.status));
 }
 
+function outboundSender(inboundNumber?: string | null) {
+  return inboundNumber || process.env.AFRICASTALKING_SENDER_ID || "MANU";
+}
+
 async function sendApprovalNotice(input: {
   businessId: string; objectiveId: string; rfqCode: string; supplierName: string;
   quantity: number; currency: string; total: number; deliveryAt: Date;
 }) {
+  const business = await db.business.findFirstOrThrow({
+    where: { id: input.businessId },
+    select: { inboundNumber: true },
+  });
+  const from = outboundSender(business.inboundNumber);
   const recipients = await db.businessMembership.findMany({
     where: { businessId: input.businessId, role: { in: ["ADMIN", "APPROVER"] }, user: { phone: { not: null } } },
     include: { user: true },
@@ -56,9 +65,9 @@ async function sendApprovalNotice(input: {
     const existing = await db.externalMessage.findUnique({ where: { businessId_fingerprint: { businessId: input.businessId, fingerprint: key } } });
     if (existing?.status === "SENT" || existing?.status === "DELIVERED") continue;
     const body = `Approval required for ${input.rfqCode}: ${input.supplierName}, ${input.quantity.toLocaleString()} units, ${input.currency} ${input.total.toLocaleString()}, delivery ${input.deliveryAt.toLocaleDateString("en-GB", { weekday: "long" })}. Reply APPROVE ${input.rfqCode} or REJECT ${input.rfqCode}.`;
-    const receipt = await getMessagingAdapter().send({ businessId: input.businessId, to: [membership.user.phone], message: body, idempotencyKey: key });
+    const receipt = await getMessagingAdapter().send({ businessId: input.businessId, from, to: [membership.user.phone], message: body, idempotencyKey: key });
     const provider = receipt.recipients[0];
-    await persistOutbound({ businessId: input.businessId, from: process.env.AFRICASTALKING_SENDER_ID ?? "MANU", to: membership.user.phone, body, providerId: provider?.providerMessageId, key, status: providerAccepted(provider) ? "SENT" : "FAILED" });
+    await persistOutbound({ businessId: input.businessId, from, to: membership.user.phone, body, providerId: provider?.providerMessageId, key, status: providerAccepted(provider) ? "SENT" : "FAILED" });
   }
 }
 
@@ -68,14 +77,15 @@ async function sendRfq(rfqId: string, businessId: string) {
     include: { material: true, recipients: { include: { supplier: true } }, business: true }
   });
   const adapter = getMessagingAdapter();
+  const from = outboundSender(rfq.business.inboundNumber);
   for (const recipient of rfq.recipients) {
     if (recipient.sentAt) continue;
     const message = `${rfq.business.name} needs ${Number(rfq.quantity).toLocaleString()} ${rfq.material.name} by ${rfq.requiredAt.toLocaleDateString("en-GB", { weekday: "long", timeZone: rfq.business.timezone })}. Please send your unit price, available quantity and earliest delivery date.`;
     const key = `rfq:${rfq.id}:${recipient.supplierId}`;
-    const receipt = await adapter.send({ businessId, to: [recipient.supplier.phone], message, idempotencyKey: key });
+    const receipt = await adapter.send({ businessId, from, to: [recipient.supplier.phone], message, idempotencyKey: key });
     const provider = receipt.recipients[0];
     const accepted = providerAccepted(provider);
-    await persistOutbound({ businessId, from: process.env.AFRICASTALKING_SENDER_ID ?? "MANU", to: recipient.supplier.phone, body: message, providerId: provider?.providerMessageId, key, status: accepted ? "SENT" : "FAILED" });
+    await persistOutbound({ businessId, from, to: recipient.supplier.phone, body: message, providerId: provider?.providerMessageId, key, status: accepted ? "SENT" : "FAILED" });
     if (!accepted) throw new Error(`SMS provider rejected RFQ delivery to ${recipient.supplier.name}: ${provider?.status ?? "unknown status"}`);
     await db.rfqRecipient.update({ where: { id: recipient.id }, data: { sentAt: new Date(), providerId: provider?.providerMessageId } });
   }
@@ -85,15 +95,16 @@ async function sendRfq(rfqId: string, businessId: string) {
 async function sendPurchaseOrder(purchaseOrderId: string, businessId: string) {
   const po = await db.purchaseOrder.findFirstOrThrow({
     where: { id: purchaseOrderId, businessId },
-    include: { supplier: true, lines: { include: { material: true } } }
+    include: { business: true, supplier: true, lines: { include: { material: true } } }
   });
   const line = po.lines[0];
   const message = `${po.code} confirmed: ${Number(line.quantity).toLocaleString()} ${line.material.name} at ${po.currency} ${Number(line.unitPrice).toLocaleString()} each. Delivery ${po.expectedAt.toLocaleDateString("en-GB", { weekday: "long" })}.`;
   const key = `po:${po.id}:confirmation`;
-  const receipt = await getMessagingAdapter().send({ businessId, to: [po.supplier.phone], message, idempotencyKey: key });
+  const from = outboundSender(po.business.inboundNumber);
+  const receipt = await getMessagingAdapter().send({ businessId, from, to: [po.supplier.phone], message, idempotencyKey: key });
   const provider = receipt.recipients[0];
   const accepted = providerAccepted(provider);
-  await persistOutbound({ businessId, from: process.env.AFRICASTALKING_SENDER_ID ?? "MANU", to: po.supplier.phone, body: message, providerId: provider?.providerMessageId, key, status: accepted ? "SENT" : "FAILED" });
+  await persistOutbound({ businessId, from, to: po.supplier.phone, body: message, providerId: provider?.providerMessageId, key, status: accepted ? "SENT" : "FAILED" });
   if (!accepted) throw new Error(`SMS provider rejected ${po.code} confirmation: ${provider?.status ?? "unknown status"}`);
 }
 
