@@ -10,6 +10,14 @@ export type QuoteView = {
   eligible: boolean; reason?: string;
 };
 
+export type PurchasePaymentView = {
+  id: string;
+  status: "PENDING" | "COMPLETED" | "FAILED";
+  provider: string;
+  amount: number;
+  currency: string;
+};
+
 export type ObjectiveView = {
   id: string;
   text: string;
@@ -20,6 +28,10 @@ export type ObjectiveView = {
   quotes: QuoteView[];
   purchaseOrderId?: string;
   purchaseOrderCode?: string;
+  purchaseOrderTotal?: number;
+  purchaseOrderCurrency?: string;
+  purchaseOrderSupplier?: string;
+  payment?: PurchasePaymentView;
   productionJobId?: string;
   productionJobCode?: string;
   summary?: Record<string, string | number>;
@@ -48,6 +60,7 @@ export function normalizeObjective(input: unknown): ObjectiveView {
         ? raw.rfqs.flatMap((rfq: any) => Array.isArray(rfq.quotes) ? rfq.quotes : [])
         : [];
   const po = raw.purchaseOrder ?? raw.purchaseOrders?.[0];
+  const paymentRaw = po?.payment ?? po?.payments?.[0];
   const job = raw.productionJob ?? raw.productionJobs?.[0];
   const actionEvents = Array.isArray(raw.events) ? raw.events : Array.isArray(raw.actionEvents) ? raw.actionEvents : [];
   const stepEvents = Array.isArray(raw.steps)
@@ -77,6 +90,13 @@ export function normalizeObjective(input: unknown): ObjectiveView {
     } : undefined,
     purchaseOrderId: text(po?.id || raw.purchaseOrderId) || undefined,
     purchaseOrderCode: text(po?.code || po?.displayCode || raw.purchaseOrderCode) || undefined,
+    purchaseOrderTotal: po ? asNumber(po.total) : undefined,
+    purchaseOrderCurrency: po ? text(po.currency, "TZS") : undefined,
+    purchaseOrderSupplier: po ? text(po.supplier?.name, "Supplier") : undefined,
+    payment: paymentRaw ? {
+      id: text(paymentRaw.id), status: text(paymentRaw.status, "PENDING") as PurchasePaymentView["status"],
+      provider: text(paymentRaw.provider, "demo"), amount: asNumber(paymentRaw.amount), currency: text(paymentRaw.currency, "TZS"),
+    } : undefined,
     productionJobId: text(job?.id || raw.productionJobId) || undefined,
     productionJobCode: text(job?.code || job?.displayCode || raw.productionJobCode) || undefined,
     summary: raw.summary,

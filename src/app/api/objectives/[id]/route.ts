@@ -14,7 +14,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
         events: { orderBy: { occurredAt: "asc" } },
         rfqs: { include: { material: true, recipients: { include: { supplier: true } }, quotes: { include: { supplier: true } } } },
         approvals: { include: { quote: { include: { supplier: true, rfq: { include: { material: true } } } } } },
-        purchaseOrders: { include: { supplier: true, lines: { include: { material: true } } } },
+        purchaseOrders: { include: { supplier: true, payments: { orderBy: { createdAt: "desc" }, take: 1 }, lines: { include: { material: true } } } },
         productionJobs: { include: { product: true, allocations: { include: { material: true } } } }
       }
     });

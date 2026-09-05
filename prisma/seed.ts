@@ -17,6 +17,7 @@ async function main() {
       await tx.approvalRequest.deleteMany({ where: { businessId } });
       await tx.goodsReceiptLine.deleteMany({ where: { goodsReceipt: { businessId } } });
       await tx.goodsReceipt.deleteMany({ where: { businessId } });
+      await tx.purchasePayment.deleteMany({ where: { businessId } });
       await tx.purchaseOrderLine.deleteMany({ where: { purchaseOrder: { businessId } } });
       await tx.purchaseOrder.deleteMany({ where: { businessId } });
       await tx.supplierQuote.deleteMany({ where: { businessId } });
@@ -53,6 +54,7 @@ async function main() {
     data: {
       name: "Kilimanjaro Foods Ltd", slug: "kilimanjaro-foods", currency: "TZS", timezone: "Africa/Dar_es_Salaam",
       autoPurchaseLimit: 250_000, defaultSafetyStock: 0, inboundNumber: process.env.AFRICASTALKING_INBOUND_NUMBER || "+255700000000",
+      manufacturerPaymentPhone: "0768967257",
       memberships: { create: [{ userId: admin.id, role: "ADMIN" }, { userId: operator.id, role: "OPERATOR" }, { userId: approver.id, role: "APPROVER" }] },
       sequences: { create: [{ key: "RFQ", nextValue: 104 }, { key: "PO", nextValue: 204 }, { key: "PJ", nextValue: 301 }] },
       customers: { create: [{ id: "hero-customer", code: "CUST-001", name: "Dar Distributors", phone: "+255700000010" }] },
