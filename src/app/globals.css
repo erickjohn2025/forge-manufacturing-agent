@@ -18,3 +18,7 @@
 /* approvals */
 .approvals-inbox{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;align-items:start}.approval-objective-link{display:block;margin:12px 18px 0;color:var(--green);font-size:10px;font-weight:800;text-decoration:none}.approvals-empty{margin-top:8px}
 @media(max-width:620px){.approvals-inbox{grid-template-columns:1fr}}
+/* procurement */
+.procurement-columns{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.pipe-card{padding:12px;background:#f6f7f3;border-radius:10px;margin-top:8px}.pipe-card strong,.pipe-card small,.pipe-card p,.pipe-card em{display:block}.pipe-card strong{font-size:12px}.pipe-card small,.pipe-card p{font-size:9px;color:var(--muted);margin-top:3px}.pipe-card em{font:700 8px var(--font-body);color:var(--red);margin-top:6px}.pipe-card em.ok-label{color:var(--green)}.pipe-card.rejected{background:#fff3f1}.muted-copy{font-size:11px;color:var(--muted)}.receive-bar{margin-top:8px}.receive-bar span{font-size:8px;color:var(--muted)}.receive-bar i{display:block;height:6px;background:#e4e7e1;border-radius:99px;margin-top:4px;overflow:hidden}.receive-bar b{display:block;height:100%;background:var(--green);border-radius:99px}
+@media(max-width:950px){.procurement-columns{grid-template-columns:1fr 1fr}}
+@media(max-width:620px){.procurement-columns{grid-template-columns:1fr}}
