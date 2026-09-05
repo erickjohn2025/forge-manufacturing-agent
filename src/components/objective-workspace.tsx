@@ -77,7 +77,9 @@ export function ObjectiveWorkspace({ objectiveId }: { objectiveId: string }) {
       {domains.map((domain) => <div className="timeline-domain" key={domain.id}>
         <div className="timeline-domain-title"><span>{domain.id}</span><p>{domain.caption}</p></div>
         <div className="timeline-events">{eventsByDomain[domain.id].length ? eventsByDomain[domain.id].map((event) => <div className={`timeline-event ${event.status.toLowerCase()}`} key={event.id}>
-          <span>{eventIcon(event.status)}</span><div><strong>{event.title}</strong>{event.detail && <p>{event.detail}</p>}<time>{new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date(event.occurredAt))}</time></div>
+          <span>{eventIcon(event.status)}</span><div><strong>{event.title}</strong>{event.detail && <p>{event.detail}</p>}<time>{new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit" }).format(new Date(event.occurredAt))}</time>
+            {(event.toolName || event.payload != null) && <details className="audit-payload"><summary>Tool audit</summary>{event.toolName && <p className="tool-name">{event.toolName}</p>}{event.payload != null && <pre>{JSON.stringify(event.payload, null, 2)}</pre>}</details>}
+          </div>
         </div>) : <div className="timeline-empty"><i /><span>Waiting for this phase</span></div>}</div>
       </div>)}
     </section>

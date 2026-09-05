@@ -25,4 +25,19 @@ export type ObjectiveEvent = {
   title: string;
   detail?: string;
   occurredAt: string;
+  toolName?: string;
+  payload?: unknown;
 };
+
+export function serializeObjectiveEvent(event: {
+  id: string; domain: ObjectiveDomain; status: TimelineStatus; title: string;
+  detail?: string | null; toolName?: string | null; payload?: unknown; occurredAt: Date | string;
+}): ObjectiveEvent {
+  return {
+    id: event.id, domain: event.domain, status: event.status, title: event.title,
+    detail: event.detail ?? undefined,
+    occurredAt: typeof event.occurredAt === "string" ? event.occurredAt : event.occurredAt.toISOString(),
+    toolName: event.toolName ?? undefined,
+    payload: event.payload ?? undefined,
+  };
+}

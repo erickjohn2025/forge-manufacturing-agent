@@ -1,4 +1,4 @@
-import type { ObjectiveEvent, ObjectiveState } from "./contracts";
+import { serializeObjectiveEvent, type ObjectiveEvent, type ObjectiveState } from "./contracts";
 
 export type ApprovalView = {
   id: string; supplierName: string; quantity: number; unitPrice: number; total: number;
@@ -116,7 +116,11 @@ export function normalizeObjective(input: unknown): ObjectiveView {
     text: text(raw.text ?? raw.prompt ?? raw.description ?? raw.objectiveText, "Manufacturing objective"),
     status: (raw.state ?? raw.status ?? "PLANNING") as ObjectiveState,
     createdAt: text(raw.createdAt, new Date().toISOString()),
-    events: [...actionEvents, ...stepEvents],
+    events: [...actionEvents, ...stepEvents].map((event: Record<string, unknown>) => serializeObjectiveEvent({
+      id: text(event.id), domain: event.domain as ObjectiveEvent["domain"], status: event.status as ObjectiveEvent["status"],
+      title: text(event.title), detail: text(event.detail) || undefined,
+      occurredAt: text(event.occurredAt, raw.createdAt), toolName: text(event.toolName) || undefined, payload: event.payload,
+    })),
     quotes: quotes.map((quote: any) => ({
       id: text(quote.id), supplierName: text(quote.supplierName ?? quote.supplier?.name, "Supplier"),
       unitPrice: asNumber(quote.unitPrice), currency: text(quote.currency, "TZS"),

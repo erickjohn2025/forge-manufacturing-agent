@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { serializeObjectiveEvent } from "@/lib/contracts";
 import { ApiError, apiError } from "@/lib/http";
 import { requireTenant } from "@/lib/tenant";
 
@@ -27,7 +28,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
           ]);
           for (const event of events) {
             lastSeen = event.occurredAt;
-            controller.enqueue(encoder.encode(`event: objective-event\ndata: ${JSON.stringify(event)}\n\n`));
+            controller.enqueue(encoder.encode(`event: objective-event\ndata: ${JSON.stringify(serializeObjectiveEvent(event))}\n\n`));
           }
           controller.enqueue(encoder.encode(`event: state\ndata: ${JSON.stringify(objective)}\n\n`));
         };
