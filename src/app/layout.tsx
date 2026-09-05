@@ -7,8 +7,8 @@ const manrope = Manrope({ subsets: ["latin"], variable: "--font-body" });
 const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-display" });
 
 export const metadata: Metadata = {
-  title: "Forge — Manufacturing Operations Agent",
-  description: "Tell your factory what outcome you need. Forge coordinates the work.",
+  title: "Manu — AI Manufacturing Operations Agent",
+  description: "Tell your factory what outcome you need. Manu coordinates the work.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

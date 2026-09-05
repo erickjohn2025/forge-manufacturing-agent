@@ -24,11 +24,11 @@ export default function LoginPage() {
 
   return <main className="login-page">
     <section className="login-story">
-      <div className="login-brand"><span className="brand-mark light"><FactoryIcon /></span><span>forge</span></div>
+      <div className="login-brand"><span className="brand-mark light"><FactoryIcon /></span><span>manu</span></div>
       <div className="story-copy">
         <span className="eyebrow light"><SparkIcon /> Manufacturing intelligence</span>
         <h1>Your factory,<br/><em>moving as one.</em></h1>
-        <p>Set the outcome. Forge plans the work, coordinates your suppliers and teams, and keeps moving until it’s done.</p>
+        <p>Set the outcome. Manu plans the work, coordinates your suppliers and teams, and keeps moving until it’s done.</p>
         <div className="story-flow">
           {[["01", "Plan", "Know exactly what is needed"], ["02", "Source", "Secure materials through real suppliers"], ["03", "Make", "Coordinate production to completion"], ["04", "Deliver", "Prepare every order on time"]].map(([n, title, text]) => <div key={n}><span>{n}</span><p><strong>{title}</strong>{text}</p><CheckIcon /></div>)}
         </div>
@@ -37,7 +37,7 @@ export default function LoginPage() {
     </section>
     <section className="login-panel">
       <form className="login-form" onSubmit={submit}>
-        <div className="mobile-login-brand"><span className="brand-mark"><FactoryIcon /></span><span>forge</span></div>
+        <div className="mobile-login-brand"><span className="brand-mark"><FactoryIcon /></span><span>manu</span></div>
         <span className="overline">OPERATIONS CONSOLE</span>
         <h2>Welcome back</h2>
         <p>Sign in to set your factory’s next objective.</p>

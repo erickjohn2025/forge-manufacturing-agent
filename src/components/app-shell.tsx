@@ -23,7 +23,7 @@ export async function AppShell({ children, current }: { children: React.ReactNod
 
   return <div className="app-frame">
     <aside className="sidebar">
-      <Link href="/" className="brand"><span className="brand-mark"><FactoryIcon /></span><span>forge</span></Link>
+      <Link href="/" className="brand"><span className="brand-mark"><FactoryIcon /></span><span>manu</span></Link>
       <nav className="main-nav" aria-label="Primary navigation">
         {nav.map(({ href, id, label, Icon }) => <Link href={href} className={current === id ? "active" : ""} aria-current={current === id ? "page" : undefined} key={id}><Icon /><span>{label}</span></Link>)}
       </nav>
@@ -35,7 +35,7 @@ export async function AppShell({ children, current }: { children: React.ReactNod
       </div>
     </aside>
     <main className="app-main">
-      <header className="mobile-header"><Link href="/" className="brand"><span className="brand-mark"><FactoryIcon /></span><span>forge</span></Link><nav className="mobile-actions" aria-label="Primary navigation">{nav.map(({ href, id, label, Icon }) => <Link href={href} className={current === id ? "active" : ""} aria-current={current === id ? "page" : undefined} aria-label={label} key={id}><Icon /></Link>)}<SignOutButton /></nav></header>
+      <header className="mobile-header"><Link href="/" className="brand"><span className="brand-mark"><FactoryIcon /></span><span>manu</span></Link><nav className="mobile-actions" aria-label="Primary navigation">{nav.map(({ href, id, label, Icon }) => <Link href={href} className={current === id ? "active" : ""} aria-current={current === id ? "page" : undefined} aria-label={label} key={id}><Icon /></Link>)}<SignOutButton /></nav></header>
       {children}
     </main>
   </div>;

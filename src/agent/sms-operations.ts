@@ -10,9 +10,11 @@ import {
   planObjective,
   recordGoodsReceipt,
   recordProductionCompletion,
+  resetHeroScenario,
   verifyObjectiveCompletion,
 } from "@/domain";
 import { dateAtLocalEndOfDay } from "@/lib/dates";
+import { logInfo } from "@/lib/logger";
 
 export type StaffSmsCommand =
   | { kind: "APPROVE"; reference?: string }
@@ -21,6 +23,7 @@ export type StaffSmsCommand =
   | { kind: "COMPLETE_PRODUCTION"; reference?: string; actualQuantity?: number }
   | { kind: "STATUS" }
   | { kind: "HELP" }
+  | { kind: "RESET_HERO" }
   | { kind: "OBJECTIVE"; text: string };
 
 const normalizedReference = (value?: string) => value?.trim().toUpperCase();
@@ -30,6 +33,7 @@ export function parseStaffSms(text: string): StaffSmsCommand {
   const value = text.trim().replace(/\s+/g, " ");
   if (/^(help|commands|menu)$/i.test(value)) return { kind: "HELP" };
   if (/^(status|update|progress|what(?:'s| is) happening)\??$/i.test(value)) return { kind: "STATUS" };
+  if (/^(reset hero|start over)[.!]?$/i.test(value)) return { kind: "RESET_HERO" };
 
   const approval = value.match(/^(approve|approved|yes[,]? approve)(?:\s+(?:purchase|approval|po)?\s*([a-z0-9-]+))?[.!]?$/i);
   if (approval) return { kind: "APPROVE", reference: normalizedReference(approval[2]) };
@@ -86,16 +90,28 @@ async function receivePurchaseOrder(db: PrismaClient, input: StaffContext, refer
   if (orders.length === 0) throw new Error(reference ? `No open purchase order matches ${reference}` : "There is no purchase order waiting to be received");
   if (orders.length > 1) throw new Error("More than one purchase order is open; reply RECEIVED followed by the PO code");
   const po = orders[0];
-  await recordGoodsReceipt(db, { businessId: input.businessId, purchaseOrderId: po.id, idempotencyKey: `sms:${input.messageId}:receipt` });
-  if (!po.objectiveId || !po.objective) return `${po.code} received. Available material inventory has been updated.`;
-  const plan = await planObjective(db, { businessId: input.businessId, dueAt: po.objective.targetDueAt ?? new Date() });
+  const dueOrders = process.env.DEMO_MODE === "true"
+    ? await db.purchaseOrder.findMany({
+        where: { businessId: input.businessId, status: { in: ["ISSUED", "PARTIALLY_RECEIVED"] }, expectedAt: { lte: po.expectedAt } },
+        include: { objective: true }, orderBy: { expectedAt: "asc" },
+      })
+    : [po];
+  for (const dueOrder of dueOrders) {
+    await recordGoodsReceipt(db, { businessId: input.businessId, purchaseOrderId: dueOrder.id, receivedAt: po.expectedAt, idempotencyKey: `sms:${input.messageId}:receipt:${dueOrder.id}` });
+  }
+  const objective = po.objective ?? await db.objective.findFirst({
+    where: { businessId: input.businessId, state: "IN_PROGRESS", purchaseOrders: { some: {} } },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!objective) return `${dueOrders.map((item) => item.code).join(" and ")} received. Available material inventory has been updated.`;
+  const plan = await planObjective(db, { businessId: input.businessId, dueAt: objective.targetDueAt ?? new Date() });
   const jobs = [];
   const materialBlocks: string[] = [];
   for (const item of plan.data?.production.filter((product) => product.productionRequired > 0) ?? []) {
     const job = await createProductionJob(db, {
-      businessId: input.businessId, objectiveId: po.objectiveId, productId: item.productId,
-      quantity: item.productionRequired, scheduledAt: new Date((po.objective.targetDueAt ?? new Date()).getTime() - 2 * 86_400_000),
-      idempotencyKey: `${po.objectiveId}:job:${item.productId}`,
+      businessId: input.businessId, objectiveId: objective.id, productId: item.productId,
+      quantity: item.productionRequired, scheduledAt: new Date((objective.targetDueAt ?? new Date()).getTime() - 2 * 86_400_000),
+      idempotencyKey: `${objective.id}:job:${item.productId}`,
     });
     const allocation = await allocateProductionMaterials(db, { businessId: input.businessId, jobId: job.id, idempotencyKey: `${job.id}:allocate` });
     if (!allocation.success) {
@@ -105,15 +121,16 @@ async function receivePurchaseOrder(db: PrismaClient, input: StaffContext, refer
     }
   }
   await db.objectiveStep.updateMany({
-    where: { objectiveId: po.objectiveId, domain: "MAKE" },
+    where: { objectiveId: objective.id, domain: "MAKE" },
     data: { status: "ACTIVE", detail: jobs.length ? `${jobs.length} production job(s) ready` : "Waiting for remaining material receipts" },
   });
   await db.agentActionEvent.upsert({
     where: { businessId_idempotencyKey: { businessId: input.businessId, idempotencyKey: `sms:${input.messageId}:receipt-event` } }, update: {},
-    create: { businessId: input.businessId, objectiveId: po.objectiveId, domain: "MAKE", status: "COMPLETED", title: `${po.code} received by SMS`, detail: "Incoming inventory moved to available inventory", toolName: "record_goods_receipt", idempotencyKey: `sms:${input.messageId}:receipt-event` },
+    create: { businessId: input.businessId, objectiveId: objective.id, domain: "MAKE", status: "COMPLETED", title: `${dueOrders.map((item) => item.code).join(" and ")} received by SMS`, detail: "All scheduled incoming inventory due by this date moved to available inventory", toolName: "record_goods_receipt", idempotencyKey: `sms:${input.messageId}:receipt-event` },
   });
-  if (!jobs.length) return `${po.code} received. Production is waiting for remaining materials: ${materialBlocks.join("; ")}.`;
-  return `${po.code} received. ${jobs.map((job) => `${job.code} is ready for ${Number(job.plannedQuantity).toLocaleString()} units`).join("; ")}.`;
+  const receiptCodes = dueOrders.map((item) => item.code).join(" and ");
+  if (!jobs.length) return `${receiptCodes} received. Production is waiting for remaining materials: ${materialBlocks.join("; ")}.`;
+  return `${receiptCodes} received. ${jobs.map((job) => `${job.code} is ready for ${Number(job.plannedQuantity).toLocaleString()} units`).join("; ")}.`;
 }
 
 async function completeProduction(db: PrismaClient, input: StaffContext, reference?: string, actualQuantity?: number) {
@@ -150,7 +167,15 @@ export async function handleStaffSms(
   enqueue: (objectiveId: string) => Promise<unknown> = enqueueObjective,
 ): Promise<string> {
   const command = parseStaffSms(input.text);
-  if (command.kind === "HELP") return "Commands: send an objective; STATUS; APPROVE [RFQ code]; REJECT [RFQ code]; RECEIVED [PO code]; JOB [PJ code] FINISHED, PRODUCED [quantity].";
+  logInfo("sms.staff.command", { businessId: input.businessId, userId: input.userId, messageId: input.messageId, role: input.role, commandKind: command.kind, reference: "reference" in command ? command.reference : undefined });
+  if (command.kind === "HELP") return "Commands: send an objective; STATUS; APPROVE [RFQ code]; REJECT [RFQ code]; RECEIVED [PO code]; JOB [PJ code] FINISHED, PRODUCED [quantity]. In demo mode, an ADMIN can send RESET HERO.";
+  if (command.kind === "RESET_HERO") {
+    requireRole(input.role, ["ADMIN"]);
+    if (process.env.DEMO_MODE !== "true") throw new Error("Hero reset is available only in demo mode");
+    const baseline = await resetHeroScenario(db, input.businessId, { preserveMessageId: input.messageId });
+    logInfo("demo.reset_by_sms", { businessId: input.businessId, userId: input.userId, messageId: input.messageId, ...baseline });
+    return "Hero scenario reset: 3 Friday orders, 5,000 units demand, 1,000 finished units, and a 1,400 packaging shortage. Send the objective again to begin.";
+  }
   if (command.kind === "STATUS") {
     const objective = await db.objective.findFirst({ where: { businessId: input.businessId, state: { notIn: ["COMPLETE", "FAILED"] } }, include: { events: { orderBy: { occurredAt: "desc" }, take: 1 } }, orderBy: { createdAt: "desc" } });
     return objective ? `Objective ${objective.state.replaceAll("_", " ")}: ${objective.events[0]?.title ?? objective.text}` : "No active manufacturing objective.";
@@ -185,6 +210,14 @@ export async function handleStaffSms(
       { domain: "DELIVER", title: "Prepare orders for dispatch", sequence: 4 },
     ] },
   } });
+  logInfo("objective.created_from_sms", {
+    businessId: input.businessId,
+    objectiveId: objective.id,
+    messageId: input.messageId,
+    targetDueAt: objective.targetDueAt?.toISOString(),
+    interpretationSource: interpreted.source,
+    confidence: interpreted.confidence,
+  });
   await enqueue(objective.id);
   return `Objective accepted: ${command.text} I will coordinate PLAN, SOURCE, MAKE and DELIVER. Text STATUS anytime.`;
 }

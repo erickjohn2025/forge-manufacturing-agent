@@ -6,15 +6,24 @@ import type { Job } from "pg-boss";
 nextEnv.loadEnvConfig(process.cwd());
 
 async function main() {
-  const [{ getBoss, OBJECTIVE_JOB }, { runObjectiveCycle }] = await Promise.all([
+  const [{ getBoss, OBJECTIVE_JOB }, { runObjectiveCycle }, { logError, logInfo }] = await Promise.all([
     import("@/agent/queue"),
     import("@/agent/engine"),
+    import("@/lib/logger"),
   ]);
   const boss = await getBoss();
   await boss.work<{ objectiveId: string }>(OBJECTIVE_JOB, async ([job]: Job<{ objectiveId: string }>[]) => {
-    await runObjectiveCycle(job.data.objectiveId);
+    const startedAt = Date.now();
+    logInfo("worker.objective.started", { jobId: job.id, objectiveId: job.data.objectiveId });
+    try {
+      await runObjectiveCycle(job.data.objectiveId);
+      logInfo("worker.objective.completed", { jobId: job.id, objectiveId: job.data.objectiveId, durationMs: Date.now() - startedAt });
+    } catch (error) {
+      logError("worker.objective.failed", error, { jobId: job.id, objectiveId: job.data.objectiveId, durationMs: Date.now() - startedAt });
+      throw error;
+    }
   });
-  console.log("Objective worker started");
+  logInfo("worker.started", { queue: OBJECTIVE_JOB });
 }
 
 main().catch((error) => {

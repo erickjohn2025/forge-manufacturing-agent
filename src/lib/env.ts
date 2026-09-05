@@ -17,7 +17,9 @@ const schema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default("gpt-5.4"),
   VAPI_WEBHOOK_SECRET: z.string().optional(),
-  VAPI_SIP_URI: z.string().optional()
+  VAPI_SIP_URI: z.string().optional(),
+  ZENOPAY_API_KEY: z.string().optional(),
+  ZENOPAY_API_BASE: z.string().url().default("https://zenoapi.com")
 });
 
 export const env = schema.parse({

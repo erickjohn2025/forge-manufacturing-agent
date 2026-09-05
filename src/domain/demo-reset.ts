@@ -1,7 +1,8 @@
 import type { PrismaClient } from "@prisma/client";
 import { dateAtLocalNoon, nextWeekday } from "@/lib/dates";
+import { logInfo } from "@/lib/logger";
 
-export async function resetHeroScenario(db: PrismaClient, businessId: string) {
+export async function resetHeroScenario(db: PrismaClient, businessId: string, options: { preserveMessageId?: string } = {}) {
   const business = await db.business.findUniqueOrThrow({ where: { id: businessId }, select: { timezone: true } });
   const [product, ingredient, packaging, labels, customer, supplier] = await Promise.all([
     db.product.findFirstOrThrow({ where: { businessId, sku: "PROD-A" }, select: { id: true } }),
@@ -14,12 +15,14 @@ export async function resetHeroScenario(db: PrismaClient, businessId: string) {
   const fridayDate = nextWeekday("friday").toISOString().slice(0, 10);
   const friday = dateAtLocalNoon(fridayDate, business.timezone);
   const monday = new Date(friday.getTime() - 4 * 86_400_000);
+  logInfo("demo.reset.started", { businessId, timezone: business.timezone, fridayDueAt: friday.toISOString(), incomingExpectedAt: monday.toISOString() });
 
   await db.$transaction(async (tx) => {
     await tx.objectiveStep.deleteMany({ where: { objective: { businessId } } });
     await tx.approvalRequest.deleteMany({ where: { businessId } });
     await tx.goodsReceiptLine.deleteMany({ where: { goodsReceipt: { businessId } } });
     await tx.goodsReceipt.deleteMany({ where: { businessId } });
+    await tx.purchasePayment.deleteMany({ where: { businessId } });
     await tx.purchaseOrderLine.deleteMany({ where: { purchaseOrder: { businessId } } });
     await tx.purchaseOrder.deleteMany({ where: { businessId } });
     await tx.supplierQuote.deleteMany({ where: { businessId } });
@@ -32,7 +35,7 @@ export async function resetHeroScenario(db: PrismaClient, businessId: string) {
     await tx.customerOrderLine.deleteMany({ where: { order: { businessId } } });
     await tx.customerOrder.deleteMany({ where: { businessId } });
     await tx.agentActionEvent.deleteMany({ where: { businessId } });
-    await tx.externalMessage.deleteMany({ where: { businessId } });
+    await tx.externalMessage.deleteMany({ where: { businessId, ...(options.preserveMessageId ? { id: { not: options.preserveMessageId } } : {}) } });
     await tx.objective.deleteMany({ where: { businessId } });
 
     await Promise.all([
@@ -64,5 +67,7 @@ export async function resetHeroScenario(db: PrismaClient, businessId: string) {
     } });
   });
 
-  return { orders: 3, demand: 5_000, finishedGoods: 1_000, productionRequired: 4_000, packagingShortage: 1_400 };
+  const baseline = { orders: 3, demand: 5_000, finishedGoods: 1_000, productionRequired: 4_000, packagingShortage: 1_400 };
+  logInfo("demo.reset.completed", { businessId, ...baseline });
+  return baseline;
 }

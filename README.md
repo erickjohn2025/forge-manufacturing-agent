@@ -16,6 +16,17 @@ approval, receives materials, completes production, and allocates Friday orders.
 Set it to `africas-talking` and supply the Africa's Talking variables for real
 SMS. Issued purchase orders remain incoming until a receipt is recorded.
 
+After a purchase order is issued, the objective workspace can collect its exact
+TZS total from the manufacturer. With `ZENOPAY_API_KEY` empty, the payment is a
+12-second simulation and no money moves. With a configured ZenoPay merchant key,
+the same server-only integration sends a mobile-money prompt and verifies the
+result with the provider. This demo records collection only; it does not pay the
+supplier.
+
+The demo business uses `0768967257` as its manufacturer collection number.
+Administrators can replace it on the Configuration page; the value is stored on
+the business tenant rather than in global application configuration.
+
 ## Run operations by SMS
 
 Register each staff member's phone on `User.phone` (the demo seed reads

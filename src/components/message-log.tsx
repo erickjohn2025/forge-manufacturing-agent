@@ -27,12 +27,13 @@ export function MessageLog() {
   const threads = useMemo(() => {
     const groups = new Map<string, MessageView[]>();
     for (const message of items) {
-      const list = groups.get(message.counterpart) ?? [];
+      const list = groups.get(message.counterpartKey) ?? [];
       list.push(message);
-      groups.set(message.counterpart, list);
+      groups.set(message.counterpartKey, list);
     }
-    return [...groups.entries()].map(([counterpart, messages]) => ({
-      counterpart,
+    return [...groups.entries()].map(([counterpartKey, messages]) => ({
+      counterpartKey,
+      counterpart: messages[0]?.counterpart ?? "Unknown contact",
       messages: [...messages].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     }));
   }, [items]);
@@ -42,7 +43,7 @@ export function MessageLog() {
   if (threads.length === 0) return <div className="empty-state"><span><MessageIcon /></span><h3>No SMS yet</h3><p>Inbound and outbound factory messages will thread here by phone number.</p></div>;
 
   return <div className="message-log">
-    {threads.map((thread) => <section className="message-thread" key={thread.counterpart}>
+    {threads.map((thread) => <section className="message-thread" key={thread.counterpartKey}>
       <header><MessageIcon /><strong>{thread.counterpart}</strong><span>{thread.messages.length} messages</span></header>
       <ol>
         {thread.messages.map((message) => <li className={`bubble ${message.direction.toLowerCase()}`} key={message.id}>

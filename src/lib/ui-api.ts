@@ -6,6 +6,8 @@ export type ApprovalView = {
   materialName?: string; objectiveId?: string; objectiveText?: string;
 };
 
+export type ApprovalsQueueView = { items: ApprovalView[]; canDecide: boolean };
+
 export type FloorOrderView = {
   id: string; code: string; customer: string; dueAt: string; status: string;
   lineCount: number; ordered: number; allocated: number;
@@ -55,7 +57,7 @@ export type ProcurementView = {
 
 export type MessageView = {
   id: string; direction: string; channel: string; status: string;
-  fromAddress: string; toAddress: string; counterpart: string; body: string; createdAt: string;
+  fromAddress: string; toAddress: string; counterpart: string; counterpartKey: string; body: string; createdAt: string;
 };
 
 export type MessageLogView = { items: MessageView[]; nextCursor?: string };
@@ -65,18 +67,42 @@ export type QuoteView = {
   eligible: boolean; reason?: string;
 };
 
+export type PurchasePaymentView = {
+  id: string;
+  status: "PENDING" | "COMPLETED" | "FAILED";
+  provider: string;
+  amount: number;
+  currency: string;
+};
+
+export type ObjectiveStepView = {
+  domain: "PLAN" | "SOURCE" | "MAKE" | "DELIVER";
+  status: "PENDING" | "ACTIVE" | "WAITING" | "COMPLETED" | "FAILED";
+  title: string;
+  detail?: string;
+};
+
 export type ObjectiveView = {
   id: string;
   text: string;
   status: ObjectiveState;
   createdAt: string;
   events: ObjectiveEvent[];
+  steps: ObjectiveStepView[];
   approval?: ApprovalView;
   quotes: QuoteView[];
   purchaseOrderId?: string;
   purchaseOrderCode?: string;
+  purchaseOrderTotal?: number;
+  purchaseOrderCurrency?: string;
+  purchaseOrderSupplier?: string;
+  purchaseOrderStatus?: string;
+  purchaseOrderExpectedAt?: string;
+  payment?: PurchasePaymentView;
   productionJobId?: string;
   productionJobCode?: string;
+  productionJobStatus?: string;
+  productionJobQuantity?: number;
   summary?: Record<string, string | number>;
 };
 
@@ -103,6 +129,7 @@ export function normalizeObjective(input: unknown): ObjectiveView {
         ? raw.rfqs.flatMap((rfq: any) => Array.isArray(rfq.quotes) ? rfq.quotes : [])
         : [];
   const po = raw.purchaseOrder ?? raw.purchaseOrders?.[0];
+  const paymentRaw = po?.payment ?? po?.payments?.[0];
   const job = raw.productionJob ?? raw.productionJobs?.[0];
   const actionEvents = Array.isArray(raw.events) ? raw.events : Array.isArray(raw.actionEvents) ? raw.actionEvents : [];
   const stepEvents = Array.isArray(raw.steps)
@@ -121,6 +148,9 @@ export function normalizeObjective(input: unknown): ObjectiveView {
       title: text(event.title), detail: text(event.detail) || undefined,
       occurredAt: text(event.occurredAt, raw.createdAt), toolName: text(event.toolName) || undefined, payload: event.payload,
     })),
+    steps: Array.isArray(raw.steps) ? raw.steps.map((step: any) => ({
+      domain: step.domain, status: step.status, title: text(step.title), detail: text(step.detail) || undefined,
+    })) : [],
     quotes: quotes.map((quote: any) => ({
       id: text(quote.id), supplierName: text(quote.supplierName ?? quote.supplier?.name, "Supplier"),
       unitPrice: asNumber(quote.unitPrice), currency: text(quote.currency, "TZS"),
@@ -136,8 +166,19 @@ export function normalizeObjective(input: unknown): ObjectiveView {
     } : undefined,
     purchaseOrderId: text(po?.id || raw.purchaseOrderId) || undefined,
     purchaseOrderCode: text(po?.code || po?.displayCode || raw.purchaseOrderCode) || undefined,
+    purchaseOrderTotal: po ? asNumber(po.total) : undefined,
+    purchaseOrderCurrency: po ? text(po.currency, "TZS") : undefined,
+    purchaseOrderSupplier: po ? text(po.supplier?.name, "Supplier") : undefined,
+    purchaseOrderStatus: po ? text(po.status) : undefined,
+    purchaseOrderExpectedAt: po ? text(po.expectedAt) : undefined,
+    payment: paymentRaw ? {
+      id: text(paymentRaw.id), status: text(paymentRaw.status, "PENDING") as PurchasePaymentView["status"],
+      provider: text(paymentRaw.provider, "demo"), amount: asNumber(paymentRaw.amount), currency: text(paymentRaw.currency, "TZS"),
+    } : undefined,
     productionJobId: text(job?.id || raw.productionJobId) || undefined,
     productionJobCode: text(job?.code || job?.displayCode || raw.productionJobCode) || undefined,
+    productionJobStatus: job ? text(job.status) : undefined,
+    productionJobQuantity: job ? asNumber(job.plannedQuantity) : undefined,
     summary: raw.summary,
   };
 }
