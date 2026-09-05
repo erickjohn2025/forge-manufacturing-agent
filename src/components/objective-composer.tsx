@@ -31,7 +31,7 @@ export function ObjectiveComposer() {
     <div className="composer-heading"><span><SparkIcon /></span><div><p>WHAT NEEDS TO GET DONE?</p><h2>Set an outcome for your factory.</h2></div></div>
     <form onSubmit={submit}>
       <textarea value={objective} onChange={(event) => setObjective(event.target.value)} rows={3} aria-label="Manufacturing objective" />
-      <div className="composer-footer"><span>Forge will plan and coordinate the work</span><button className="primary-button" disabled={pending || !objective.trim()}>{pending ? "Starting…" : "Start objective"}<ArrowIcon /></button></div>
+      <div className="composer-footer"><span>Manu will plan and coordinate the work</span><button className="primary-button" disabled={pending || !objective.trim()}>{pending ? "Starting…" : "Start objective"}<ArrowIcon /></button></div>
     </form>
     {error && <div className="form-error" role="alert">{error}</div>}
     <div className="suggestion-row"><span>Try:</span>{suggestions.map((item) => <button key={item} type="button" onClick={() => setObjective(item)}>{item}</button>)}</div>

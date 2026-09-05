@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Manu</title>
+  <desc id="desc">A factory and spark mark for the Manu manufacturing operations agent.</desc>
+  <rect width="1024" height="1024" rx="224" fill="#102b24"/>
+  <circle cx="777" cy="247" r="118" fill="#c7e86d" opacity=".14"/>
+  <path d="M170 750V424l190 103V386l190 141V270h126l58 480H170Z" fill="none" stroke="#c7e86d" stroke-width="54" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M282 641h18m136 0h18m136 0h18" stroke="#f4f3ec" stroke-width="42" stroke-linecap="round"/>
+  <path d="m784 151 20 59 60 21-60 21-20 59-21-59-59-21 59-21 21-59Z" fill="#f4f3ec"/>
+</svg>

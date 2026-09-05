@@ -3,7 +3,7 @@ steps:
     args:
       - build
       - --file
-      - Dockerfile.gcp
+      - Dockerfile
       - --tag
       - ${_IMAGE}
       - .
