@@ -18,10 +18,22 @@ function eventIcon(status: ObjectiveEvent["status"]) {
   return <ClockIcon />;
 }
 
+function currentActivity(objective: ObjectiveView) {
+  if (objective.status === "COMPLETE") return { title: "Outcome verified", detail: "Every target order is allocated and ready for dispatch.", tone: "complete" };
+  if (objective.status === "BLOCKED" || objective.status === "FAILED") return { title: "Human attention required", detail: "The agent cannot continue until the blocking condition is resolved.", tone: "blocked" };
+  if (objective.status === "WAITING_APPROVAL") return { title: "Waiting for purchase approval", detail: "An authorised approver must approve or reject the selected supplier quote.", tone: "waiting" };
+  if (objective.status === "WAITING_EXTERNAL") return { title: "Waiting for supplier quotations", detail: `${objective.quotes.length} quotation${objective.quotes.length === 1 ? "" : "s"} received so far.`, tone: "waiting" };
+  if (objective.productionJobId && objective.productionJobStatus === "PLANNED") return { title: `${objective.productionJobCode ?? "Production job"} is waiting for materials`, detail: "The job exists, but material allocation has not completed yet.", tone: "waiting" };
+  if (objective.productionJobId && objective.productionJobStatus !== "COMPLETE") return { title: `${objective.productionJobCode ?? "Production job"} is ready`, detail: `${objective.productionJobQuantity?.toLocaleString() ?? "Planned"} units are awaiting production completion.`, tone: "active" };
+  if (objective.purchaseOrderId && objective.purchaseOrderStatus !== "RECEIVED") return { title: `${objective.purchaseOrderCode ?? "Purchase order"} issued — awaiting receipt`, detail: "Materials are incoming and have not been added to available inventory.", tone: "waiting" };
+  return { title: "Agent is planning and coordinating", detail: "Operational tools are running against current manufacturing data.", tone: "active" };
+}
+
 export function ObjectiveWorkspace({ objectiveId }: { objectiveId: string }) {
   const [objective, setObjective] = useState<ObjectiveView | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [paymentPhone, setPaymentPhone] = useState("");
   const [pending, startTransition] = useTransition();
   const load = useCallback(async () => {
     try { setObjective(normalizeObjective(await apiFetch<unknown>(`/api/objectives/${objectiveId}`))); setError(""); }
@@ -36,6 +48,17 @@ export function ObjectiveWorkspace({ objectiveId }: { objectiveId: string }) {
     stream.addEventListener("state", () => void load());
     return () => stream.close();
   }, [objectiveId, load]);
+  useEffect(() => {
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void load(); }, 3_000);
+    return () => window.clearInterval(timer);
+  }, [load]);
+  useEffect(() => {
+    if (objective?.payment?.status !== "PENDING" || !objective.purchaseOrderId) return;
+    const timer = setInterval(() => {
+      void apiFetch(`/api/purchase-orders/${objective.purchaseOrderId}/payments`).then(() => load()).catch(() => undefined);
+    }, 3_000);
+    return () => clearInterval(timer);
+  }, [objective?.payment?.status, objective?.purchaseOrderId, load]);
 
   const eventsByDomain = useMemo(() => Object.fromEntries(domains.map(({ id }) => [id, objective?.events.filter((event) => event.domain === id) ?? []])) as Record<ObjectiveDomain, ObjectiveEvent[]>, [objective]);
 
@@ -50,6 +73,7 @@ export function ObjectiveWorkspace({ objectiveId }: { objectiveId: string }) {
   if (!objective) return <div className="page-error"><AlertIcon /><h2>Objective unavailable</h2><p>{error}</p><button onClick={() => load()}>Try again</button></div>;
 
   const completed = objective.status === "COMPLETE";
+  const activity = currentActivity(objective);
   return <div className="objective-workspace">
     <div className="crumb"><Link href="/objectives">Objectives</Link><span>/</span><span>Objective {objective.id.slice(-6)}</span></div>
     <header className="objective-header">
@@ -60,14 +84,18 @@ export function ObjectiveWorkspace({ objectiveId }: { objectiveId: string }) {
     {error && <div className="banner error"><AlertIcon />{error}</div>}
     {notice && <div className="banner success"><CheckIcon />{notice}<button onClick={() => setNotice("")}>×</button></div>}
 
+    <section className={`current-activity ${activity.tone}`}><span>{activity.tone === "complete" ? <CheckIcon /> : activity.tone === "blocked" ? <AlertIcon /> : <ClockIcon />}</span><div><small>RIGHT NOW</small><strong>{activity.title}</strong><p>{activity.detail}</p></div><i /></section>
+
     {completed && <section className="completion-hero"><span className="completion-check"><CheckIcon /></span><div><span>OBJECTIVE COMPLETE</span><h2>All Friday orders are ready for fulfilment.</h2><p>Your agent verified materials, production, and finished-goods allocation.</p></div></section>}
 
     <div className="domain-rail">{domains.map((domain, index) => {
       const domainEvents = eventsByDomain[domain.id];
-      const hasFailure = domainEvents.some((event) => event.status === "FAILED");
-      const hasWaiting = domainEvents.some((event) => event.status === "WAITING");
-      const isDone = completed || (domainEvents.length > 0 && domainEvents.every((event) => event.status === "COMPLETED"));
-      return <div className={`domain-node ${isDone ? "done" : hasFailure ? "failed" : hasWaiting || domainEvents.length ? "active" : ""}`} key={domain.id}>
+      const step = objective.steps.find((item) => item.domain === domain.id);
+      const hasFailure = step?.status === "FAILED" || domainEvents.some((event) => event.status === "FAILED");
+      const isWaiting = step?.status === "WAITING" || (!step && domainEvents.some((event) => event.status === "WAITING"));
+      const isDone = completed || step?.status === "COMPLETED";
+      const isActive = step?.status === "ACTIVE" || isWaiting;
+      return <div className={`domain-node ${isDone ? "done" : hasFailure ? "failed" : isActive ? "active" : ""}`} key={domain.id}>
         <span className="domain-index">{isDone ? <CheckIcon /> : String(index + 1).padStart(2, "0")}</span><p><strong>{domain.label}</strong><small>{domain.caption}</small></p>{index < domains.length - 1 && <i className="domain-line" />}
       </div>;
     })}</div>
@@ -93,6 +121,23 @@ export function ObjectiveWorkspace({ objectiveId }: { objectiveId: string }) {
         <dl><div><dt>Supplier</dt><dd>{objective.approval.supplierName}</dd></div><div><dt>Quantity</dt><dd>{objective.approval.quantity.toLocaleString()} units</dd></div><div><dt>Unit price</dt><dd>{formatMoney(objective.approval.unitPrice, objective.approval.currency)}</dd></div><div><dt>Delivery</dt><dd>{objective.approval.deliveryDate ? new Date(objective.approval.deliveryDate).toLocaleDateString("en", { weekday: "long", month: "short", day: "numeric" }) : "Confirmed"}</dd></div></dl>
         <div className="why-box"><SparkIcon /><p><strong>Why this supplier</strong>{objective.approval.reason}</p></div>
         <div className="decision-actions"><button className="secondary-button" disabled={pending} onClick={() => action(`/api/approvals/${objective.approval!.id}/reject`, {}, "Purchase rejected.")}>Reject</button><button className="primary-button" disabled={pending} onClick={() => action(`/api/approvals/${objective.approval!.id}/approve`, {}, "Purchase approved and sent for processing.")}>{pending ? "Working…" : "Approve purchase"}<ArrowIcon /></button></div>
+      </section>}
+
+      {objective.purchaseOrderId && <section className={`side-card payment-card ${objective.payment?.status.toLowerCase() ?? "unstarted"}`}>
+        <div className="side-card-title"><h3>Manufacturer payment</h3><span>{objective.payment?.provider === "zenopay" ? "ZenoPay" : "Demo"}</span></div>
+        <div className="payment-amount"><span>Amount to collect</span><strong>{formatMoney(objective.purchaseOrderTotal ?? 0, objective.purchaseOrderCurrency)}</strong></div>
+        <p>{objective.payment?.status === "COMPLETED"
+          ? `Payment collected for ${objective.purchaseOrderCode}. No supplier payout is included in this demo.`
+          : objective.payment?.status === "PENDING"
+            ? "Waiting for the manufacturer to approve the payment prompt. Status updates automatically."
+            : objective.payment?.status === "FAILED"
+              ? "The collection failed. Check the phone number and try a new payment."
+              : `Collect the approved purchase amount before ${objective.purchaseOrderSupplier ?? "the supplier"} delivers.`}</p>
+        {objective.payment?.status === "COMPLETED" ? <div className="payment-state success"><CheckIcon /> Collected</div> : <>
+          <label htmlFor="manufacturer-phone">Manufacturer mobile-money number <small>Optional if your profile has one</small></label>
+          <input id="manufacturer-phone" inputMode="tel" placeholder="0712 345 678" value={paymentPhone} onChange={(event) => setPaymentPhone(event.target.value)} />
+          <button className="primary-button" disabled={pending || objective.payment?.status === "PENDING"} onClick={() => action(`/api/purchase-orders/${objective.purchaseOrderId}/payments`, paymentPhone ? { phone: paymentPhone } : {}, objective.payment?.status === "FAILED" ? "A new payment prompt was sent." : "Payment prompt sent to the manufacturer.")}>{objective.payment?.status === "PENDING" ? "Waiting for payment…" : objective.payment?.status === "FAILED" ? "Try payment again" : "Collect payment"}<ArrowIcon /></button>
+        </>}
       </section>}
 
       {!completed && (objective.purchaseOrderId || objective.productionJobId) && <section className="side-card demo-controls"><div className="side-card-title"><h3>Demo controls</h3><span>Simulation</span></div><p>Advance physical events while preserving real inventory transitions.</p>

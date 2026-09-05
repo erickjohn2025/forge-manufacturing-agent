@@ -22,6 +22,7 @@ export async function resetHeroScenario(db: PrismaClient, businessId: string, op
     await tx.approvalRequest.deleteMany({ where: { businessId } });
     await tx.goodsReceiptLine.deleteMany({ where: { goodsReceipt: { businessId } } });
     await tx.goodsReceipt.deleteMany({ where: { businessId } });
+    await tx.purchasePayment.deleteMany({ where: { businessId } });
     await tx.purchaseOrderLine.deleteMany({ where: { purchaseOrder: { businessId } } });
     await tx.purchaseOrder.deleteMany({ where: { businessId } });
     await tx.supplierQuote.deleteMany({ where: { businessId } });

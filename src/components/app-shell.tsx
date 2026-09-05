@@ -12,7 +12,7 @@ export async function AppShell({ children, current }: { children: React.ReactNod
 
   return <div className="app-frame">
     <aside className="sidebar">
-      <Link href="/objectives" className="brand"><span className="brand-mark"><FactoryIcon /></span><span>forge</span></Link>
+      <Link href="/objectives" className="brand"><span className="brand-mark"><FactoryIcon /></span><span>manu</span></Link>
       <nav className="main-nav" aria-label="Primary navigation">
         <Link href="/objectives" className={current === "objectives" ? "active" : ""}><TargetIcon /><span>Objectives</span></Link>
         <Link href="/configuration" className={current === "configuration" ? "active" : ""}><SlidersIcon /><span>Configuration</span></Link>
@@ -25,7 +25,7 @@ export async function AppShell({ children, current }: { children: React.ReactNod
       </div>
     </aside>
     <main className="app-main">
-      <header className="mobile-header"><Link href="/objectives" className="brand"><span className="brand-mark"><FactoryIcon /></span><span>forge</span></Link><div className="mobile-actions"><Link href="/configuration"><SlidersIcon /></Link><SignOutButton /></div></header>
+      <header className="mobile-header"><Link href="/objectives" className="brand"><span className="brand-mark"><FactoryIcon /></span><span>manu</span></Link><div className="mobile-actions"><Link href="/configuration"><SlidersIcon /></Link><SignOutButton /></div></header>
       {children}
     </main>
   </div>;

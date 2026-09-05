@@ -90,16 +90,28 @@ async function receivePurchaseOrder(db: PrismaClient, input: StaffContext, refer
   if (orders.length === 0) throw new Error(reference ? `No open purchase order matches ${reference}` : "There is no purchase order waiting to be received");
   if (orders.length > 1) throw new Error("More than one purchase order is open; reply RECEIVED followed by the PO code");
   const po = orders[0];
-  await recordGoodsReceipt(db, { businessId: input.businessId, purchaseOrderId: po.id, idempotencyKey: `sms:${input.messageId}:receipt` });
-  if (!po.objectiveId || !po.objective) return `${po.code} received. Available material inventory has been updated.`;
-  const plan = await planObjective(db, { businessId: input.businessId, dueAt: po.objective.targetDueAt ?? new Date() });
+  const dueOrders = process.env.DEMO_MODE === "true"
+    ? await db.purchaseOrder.findMany({
+        where: { businessId: input.businessId, status: { in: ["ISSUED", "PARTIALLY_RECEIVED"] }, expectedAt: { lte: po.expectedAt } },
+        include: { objective: true }, orderBy: { expectedAt: "asc" },
+      })
+    : [po];
+  for (const dueOrder of dueOrders) {
+    await recordGoodsReceipt(db, { businessId: input.businessId, purchaseOrderId: dueOrder.id, receivedAt: po.expectedAt, idempotencyKey: `sms:${input.messageId}:receipt:${dueOrder.id}` });
+  }
+  const objective = po.objective ?? await db.objective.findFirst({
+    where: { businessId: input.businessId, state: "IN_PROGRESS", purchaseOrders: { some: {} } },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!objective) return `${dueOrders.map((item) => item.code).join(" and ")} received. Available material inventory has been updated.`;
+  const plan = await planObjective(db, { businessId: input.businessId, dueAt: objective.targetDueAt ?? new Date() });
   const jobs = [];
   const materialBlocks: string[] = [];
   for (const item of plan.data?.production.filter((product) => product.productionRequired > 0) ?? []) {
     const job = await createProductionJob(db, {
-      businessId: input.businessId, objectiveId: po.objectiveId, productId: item.productId,
-      quantity: item.productionRequired, scheduledAt: new Date((po.objective.targetDueAt ?? new Date()).getTime() - 2 * 86_400_000),
-      idempotencyKey: `${po.objectiveId}:job:${item.productId}`,
+      businessId: input.businessId, objectiveId: objective.id, productId: item.productId,
+      quantity: item.productionRequired, scheduledAt: new Date((objective.targetDueAt ?? new Date()).getTime() - 2 * 86_400_000),
+      idempotencyKey: `${objective.id}:job:${item.productId}`,
     });
     const allocation = await allocateProductionMaterials(db, { businessId: input.businessId, jobId: job.id, idempotencyKey: `${job.id}:allocate` });
     if (!allocation.success) {
@@ -109,15 +121,16 @@ async function receivePurchaseOrder(db: PrismaClient, input: StaffContext, refer
     }
   }
   await db.objectiveStep.updateMany({
-    where: { objectiveId: po.objectiveId, domain: "MAKE" },
+    where: { objectiveId: objective.id, domain: "MAKE" },
     data: { status: "ACTIVE", detail: jobs.length ? `${jobs.length} production job(s) ready` : "Waiting for remaining material receipts" },
   });
   await db.agentActionEvent.upsert({
     where: { businessId_idempotencyKey: { businessId: input.businessId, idempotencyKey: `sms:${input.messageId}:receipt-event` } }, update: {},
-    create: { businessId: input.businessId, objectiveId: po.objectiveId, domain: "MAKE", status: "COMPLETED", title: `${po.code} received by SMS`, detail: "Incoming inventory moved to available inventory", toolName: "record_goods_receipt", idempotencyKey: `sms:${input.messageId}:receipt-event` },
+    create: { businessId: input.businessId, objectiveId: objective.id, domain: "MAKE", status: "COMPLETED", title: `${dueOrders.map((item) => item.code).join(" and ")} received by SMS`, detail: "All scheduled incoming inventory due by this date moved to available inventory", toolName: "record_goods_receipt", idempotencyKey: `sms:${input.messageId}:receipt-event` },
   });
-  if (!jobs.length) return `${po.code} received. Production is waiting for remaining materials: ${materialBlocks.join("; ")}.`;
-  return `${po.code} received. ${jobs.map((job) => `${job.code} is ready for ${Number(job.plannedQuantity).toLocaleString()} units`).join("; ")}.`;
+  const receiptCodes = dueOrders.map((item) => item.code).join(" and ");
+  if (!jobs.length) return `${receiptCodes} received. Production is waiting for remaining materials: ${materialBlocks.join("; ")}.`;
+  return `${receiptCodes} received. ${jobs.map((job) => `${job.code} is ready for ${Number(job.plannedQuantity).toLocaleString()} units`).join("; ")}.`;
 }
 
 async function completeProduction(db: PrismaClient, input: StaffContext, reference?: string, actualQuantity?: number) {
