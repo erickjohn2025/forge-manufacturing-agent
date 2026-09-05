@@ -27,6 +27,32 @@ export type FloorView = {
   events: FloorEventView[];
 };
 
+export type ProcurementQuoteView = {
+  id: string; supplierName: string; unitPrice: number; currency: string; quantityAvailable: number;
+  deliveryDate: string; status: string; eligible: boolean; rejectionReason?: string;
+};
+
+export type ProcurementRfqView = {
+  id: string; code: string; materialName: string; quantity: number; status: string; requiredAt: string;
+  recipients: Array<{ supplierName: string; sentAt?: string }>;
+  quotes: ProcurementQuoteView[];
+};
+
+export type ProcurementPoView = {
+  id: string; code: string; supplierName: string; status: string; currency: string; total: number; expectedAt: string;
+  lines: Array<{ id: string; materialName: string; quantity: number; receivedQuantity: number; unitPrice: number }>;
+};
+
+export type ProcurementReceiptView = {
+  id: string; purchaseOrderCode: string; receivedAt: string; quantity: number;
+};
+
+export type ProcurementView = {
+  rfqs: ProcurementRfqView[];
+  purchaseOrders: ProcurementPoView[];
+  receipts: ProcurementReceiptView[];
+};
+
 export type QuoteView = {
   id: string; supplierName: string; unitPrice: number; currency: string; deliveryDate: string;
   eligible: boolean; reason?: string;
