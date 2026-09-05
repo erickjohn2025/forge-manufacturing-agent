@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: manufacturing
+      POSTGRES_PASSWORD: manufacturing
+      POSTGRES_DB: manufacturing
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U manufacturing"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://manufacturing:manufacturing@postgres:5432/manufacturing
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  migrate:
+    build:
+      context: .
+      target: build
+    command: ["sh", "-c", "npx prisma migrate deploy && if [ \"$$SEED_DEMO\" = \"true\" ]; then npm run db:seed; fi"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://manufacturing:manufacturing@postgres:5432/manufacturing
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      target: build
+    command: ["npm", "run", "worker"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://manufacturing:manufacturing@postgres:5432/manufacturing
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    profiles: ["stable-tunnel"]
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - app
+
+volumes:
+  postgres-data:

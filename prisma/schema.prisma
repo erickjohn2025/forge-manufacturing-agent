@@ -1,0 +1,562 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  OPERATOR
+  APPROVER
+}
+enum EntityKind {
+  PRODUCT
+  MATERIAL
+}
+enum OrderStatus {
+  CONFIRMED
+  ALLOCATED
+  READY_FOR_DISPATCH
+  DISPATCHED
+  CANCELLED
+}
+enum InventoryMovementType {
+  RECEIPT
+  PRODUCTION
+  CONSUMPTION
+  DISPATCH
+  ADJUSTMENT
+}
+enum ReservationStatus {
+  ACTIVE
+  RELEASED
+  CONSUMED
+}
+enum RfqStatus {
+  DRAFT
+  SENT
+  QUOTING
+  EVALUATED
+  CLOSED
+  CANCELLED
+}
+enum QuoteStatus {
+  RECEIVED
+  ELIGIBLE
+  REJECTED
+  SELECTED
+}
+enum PurchaseOrderStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  STALE
+}
+enum ProductionJobStatus {
+  PLANNED
+  MATERIALS_ALLOCATED
+  READY
+  IN_PROGRESS
+  COMPLETE
+  BLOCKED
+  CANCELLED
+}
+enum ObjectiveState {
+  PLANNING
+  IN_PROGRESS
+  WAITING_EXTERNAL
+  WAITING_APPROVAL
+  BLOCKED
+  COMPLETE
+  FAILED
+}
+enum ObjectiveDomain {
+  PLAN
+  SOURCE
+  MAKE
+  DELIVER
+}
+enum TimelineStatus {
+  PENDING
+  ACTIVE
+  WAITING
+  COMPLETED
+  FAILED
+}
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+enum MessageChannel {
+  SMS
+  VOICE
+  SIMULATOR
+}
+enum MessageStatus {
+  RECEIVED
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+}
+
+model User {
+  id           String               @id @default(cuid())
+  email        String               @unique
+  phone        String?              @unique
+  name         String
+  passwordHash String
+  memberships BusinessMembership[]
+  approvals    ApprovalRequest[]    @relation("ApprovalActor")
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+}
+
+model Business {
+  id                       String @id @default(cuid())
+  name                     String
+  slug                     String @unique
+  currency                 String @default("TZS")
+  timezone                 String @default("Africa/Dar_es_Salaam")
+  autoPurchaseLimit        Decimal @db.Decimal(18, 2)
+  defaultSafetyStock       Decimal @default(0) @db.Decimal(18, 4)
+  inboundNumber            String? @unique
+  memberships              BusinessMembership[]
+  products                 Product[]
+  materials                Material[]
+  customers                Customer[]
+  suppliers                Supplier[]
+  orders                   CustomerOrder[]
+  inventoryMovements       InventoryMovement[]
+  inventoryReservations    InventoryReservation[]
+  rfqs                     Rfq[]
+  quotes                   SupplierQuote[]
+  purchaseOrders           PurchaseOrder[]
+  goodsReceipts            GoodsReceipt[]
+  productionJobs           ProductionJob[]
+  objectives               Objective[]
+  events                   AgentActionEvent[]
+  externalMessages         ExternalMessage[]
+  approvals                ApprovalRequest[]
+  sequences                BusinessSequence[]
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+}
+
+model BusinessMembership {
+  userId     String
+  businessId String
+  role       Role
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  @@id([userId, businessId])
+  @@index([businessId, role])
+}
+
+model BusinessSequence {
+  businessId String
+  key        String
+  nextValue  Int
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  @@id([businessId, key])
+}
+
+model Product {
+  id         String @id @default(cuid())
+  businessId String
+  sku        String
+  name       String
+  unit       String @default("unit")
+  active     Boolean @default(true)
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  bom        Bom?
+  orderLines CustomerOrderLine[]
+  jobs       ProductionJob[]
+  @@unique([businessId, sku])
+  @@index([businessId, active])
+}
+
+model Material {
+  id           String @id @default(cuid())
+  businessId   String
+  sku          String
+  name         String
+  unit         String
+  safetyStock  Decimal? @db.Decimal(18, 4)
+  specification String?
+  business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  bomLines     BomLine[]
+  suppliers    SupplierMaterial[]
+  rfqs         Rfq[]
+  poLines      PurchaseOrderLine[]
+  allocations  ProductionMaterialAllocation[]
+  @@unique([businessId, sku])
+  @@index([businessId])
+}
+
+model Bom {
+  id        String @id @default(cuid())
+  productId String @unique
+  version   Int @default(1)
+  active    Boolean @default(true)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  lines     BomLine[]
+}
+
+model BomLine {
+  id             String @id @default(cuid())
+  bomId          String
+  materialId     String
+  quantityPerUnit Decimal @db.Decimal(18, 6)
+  bom            Bom @relation(fields: [bomId], references: [id], onDelete: Cascade)
+  material       Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  @@unique([bomId, materialId])
+}
+
+model Customer {
+  id         String @id @default(cuid())
+  businessId String
+  code       String
+  name       String
+  phone      String?
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  orders     CustomerOrder[]
+  @@unique([businessId, code])
+}
+
+model CustomerOrder {
+  id         String @id @default(cuid())
+  businessId String
+  customerId String
+  code       String
+  dueAt      DateTime
+  status     OrderStatus @default(CONFIRMED)
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  lines      CustomerOrderLine[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  @@unique([businessId, code])
+  @@index([businessId, dueAt, status])
+}
+
+model CustomerOrderLine {
+  id                String @id @default(cuid())
+  orderId           String
+  productId         String
+  quantity          Decimal @db.Decimal(18, 4)
+  allocatedQuantity Decimal @default(0) @db.Decimal(18, 4)
+  order             CustomerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product           Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  @@unique([orderId, productId])
+  @@index([productId])
+}
+
+model InventoryMovement {
+  id            String @id @default(cuid())
+  businessId    String
+  entityKind    EntityKind
+  entityId      String
+  type          InventoryMovementType
+  quantity      Decimal @db.Decimal(18, 4)
+  occurredAt    DateTime @default(now())
+  referenceType String?
+  referenceId   String?
+  idempotencyKey String
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  @@unique([businessId, idempotencyKey])
+  @@index([businessId, entityKind, entityId, occurredAt])
+}
+
+model InventoryReservation {
+  id             String @id @default(cuid())
+  businessId     String
+  entityKind     EntityKind
+  entityId       String
+  quantity       Decimal @db.Decimal(18, 4)
+  status         ReservationStatus @default(ACTIVE)
+  referenceType  String
+  referenceId    String
+  idempotencyKey String
+  business       Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  @@unique([businessId, idempotencyKey])
+  @@index([businessId, entityKind, entityId, status])
+}
+
+model Supplier {
+  id          String @id @default(cuid())
+  businessId  String
+  code        String
+  name        String
+  phone       String
+  approved    Boolean @default(false)
+  reliability Decimal @default(0) @db.Decimal(5, 2)
+  quality     Decimal @default(0) @db.Decimal(5, 2)
+  preferred   Boolean @default(false)
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  materials   SupplierMaterial[]
+  recipients  RfqRecipient[]
+  quotes      SupplierQuote[]
+  purchaseOrders PurchaseOrder[]
+  @@unique([businessId, code])
+  @@unique([businessId, phone])
+}
+
+model SupplierMaterial {
+  id            String @id @default(cuid())
+  supplierId    String
+  materialId    String
+  minimumOrder  Decimal @default(0) @db.Decimal(18, 4)
+  normalLeadDays Int @default(0)
+  specification String?
+  active         Boolean @default(true)
+  supplier       Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  material       Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  @@unique([supplierId, materialId])
+}
+
+model Rfq {
+  id             String @id @default(cuid())
+  businessId     String
+  objectiveId    String?
+  materialId     String
+  code           String
+  quantity       Decimal @db.Decimal(18, 4)
+  requiredAt     DateTime
+  responseDueAt  DateTime
+  status         RfqStatus @default(DRAFT)
+  business       Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  objective      Objective? @relation(fields: [objectiveId], references: [id], onDelete: SetNull)
+  material       Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  recipients     RfqRecipient[]
+  quotes         SupplierQuote[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  @@unique([businessId, code])
+  @@index([businessId, status])
+}
+
+model RfqRecipient {
+  id          String @id @default(cuid())
+  rfqId       String
+  supplierId  String
+  sentAt      DateTime?
+  providerId  String?
+  rfq         Rfq @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  supplier    Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  @@unique([rfqId, supplierId])
+}
+
+model SupplierQuote {
+  id                String @id @default(cuid())
+  businessId        String
+  rfqId             String
+  supplierId        String
+  unitPrice         Decimal @db.Decimal(18, 2)
+  currency          String
+  quantityAvailable Decimal @db.Decimal(18, 4)
+  deliveryAt        DateTime
+  status            QuoteStatus @default(RECEIVED)
+  rejectionCode     String?
+  rejectionReason   String?
+  rawMessageId      String?
+  business          Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  rfq               Rfq @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  supplier          Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  purchaseOrder     PurchaseOrder?
+  approval          ApprovalRequest?
+  createdAt         DateTime @default(now())
+  @@unique([rfqId, supplierId])
+  @@index([businessId, rfqId])
+}
+
+model ApprovalRequest {
+  id          String @id @default(cuid())
+  businessId  String
+  objectiveId String?
+  quoteId     String @unique
+  payloadHash String
+  total       Decimal @db.Decimal(18, 2)
+  currency    String
+  status      ApprovalStatus @default(PENDING)
+  approvedById String?
+  decidedAt   DateTime?
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  objective   Objective? @relation(fields: [objectiveId], references: [id], onDelete: SetNull)
+  quote       SupplierQuote @relation(fields: [quoteId], references: [id], onDelete: Restrict)
+  approvedBy  User? @relation("ApprovalActor", fields: [approvedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+}
+
+model PurchaseOrder {
+  id             String @id @default(cuid())
+  businessId     String
+  objectiveId    String?
+  supplierId     String
+  quoteId        String? @unique
+  code           String
+  currency       String
+  total          Decimal @db.Decimal(18, 2)
+  expectedAt     DateTime
+  status         PurchaseOrderStatus @default(DRAFT)
+  idempotencyKey String
+  business       Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  objective      Objective? @relation(fields: [objectiveId], references: [id], onDelete: SetNull)
+  supplier       Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  quote          SupplierQuote? @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  lines          PurchaseOrderLine[]
+  receipts       GoodsReceipt[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  @@unique([businessId, code])
+  @@unique([businessId, idempotencyKey])
+  @@index([businessId, status, expectedAt])
+}
+
+model PurchaseOrderLine {
+  id               String @id @default(cuid())
+  purchaseOrderId  String
+  materialId       String
+  quantity         Decimal @db.Decimal(18, 4)
+  receivedQuantity Decimal @default(0) @db.Decimal(18, 4)
+  unitPrice        Decimal @db.Decimal(18, 2)
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  material         Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  @@unique([purchaseOrderId, materialId])
+}
+
+model GoodsReceipt {
+  id              String @id @default(cuid())
+  businessId      String
+  purchaseOrderId String
+  idempotencyKey  String
+  receivedAt      DateTime @default(now())
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  lines           GoodsReceiptLine[]
+  @@unique([businessId, idempotencyKey])
+}
+
+model GoodsReceiptLine {
+  id             String @id @default(cuid())
+  goodsReceiptId String
+  poLineId       String
+  quantity       Decimal @db.Decimal(18, 4)
+  goodsReceipt   GoodsReceipt @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+}
+
+model ProductionJob {
+  id             String @id @default(cuid())
+  businessId     String
+  objectiveId    String?
+  productId      String
+  code           String
+  plannedQuantity Decimal @db.Decimal(18, 4)
+  actualQuantity Decimal? @db.Decimal(18, 4)
+  scheduledAt    DateTime
+  status         ProductionJobStatus @default(PLANNED)
+  idempotencyKey String
+  business       Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  objective      Objective? @relation(fields: [objectiveId], references: [id], onDelete: SetNull)
+  product        Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  allocations    ProductionMaterialAllocation[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  @@unique([businessId, code])
+  @@unique([businessId, idempotencyKey])
+  @@index([businessId, status])
+}
+
+model ProductionMaterialAllocation {
+  id          String @id @default(cuid())
+  jobId       String
+  materialId  String
+  quantity    Decimal @db.Decimal(18, 4)
+  reservationId String @unique
+  job         ProductionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  material    Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  @@unique([jobId, materialId])
+}
+
+model Objective {
+  id            String @id @default(cuid())
+  businessId    String
+  text          String
+  targetDueAt   DateTime?
+  state         ObjectiveState @default(PLANNING)
+  idempotencyKey String
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  steps         ObjectiveStep[]
+  events        AgentActionEvent[]
+  rfqs          Rfq[]
+  approvals     ApprovalRequest[]
+  purchaseOrders PurchaseOrder[]
+  productionJobs ProductionJob[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  completedAt   DateTime?
+  @@unique([businessId, idempotencyKey])
+  @@index([businessId, state])
+}
+
+model ObjectiveStep {
+  id          String @id @default(cuid())
+  objectiveId String
+  domain      ObjectiveDomain
+  status      TimelineStatus @default(PENDING)
+  title       String
+  detail      String?
+  sequence    Int
+  objective   Objective @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@unique([objectiveId, sequence])
+}
+
+model AgentActionEvent {
+  id          String @id @default(cuid())
+  businessId  String
+  objectiveId String?
+  domain      ObjectiveDomain
+  status      TimelineStatus
+  title       String
+  detail      String?
+  toolName    String?
+  payload     Json?
+  idempotencyKey String
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  objective   Objective? @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+  occurredAt  DateTime @default(now())
+  @@unique([businessId, idempotencyKey])
+  @@index([objectiveId, occurredAt])
+}
+
+model ExternalMessage {
+  id             String @id @default(cuid())
+  businessId     String
+  direction      MessageDirection
+  channel        MessageChannel
+  status         MessageStatus
+  fromAddress    String
+  toAddress      String
+  body           String
+  providerId     String?
+  fingerprint    String
+  providerPayload Json?
+  business       Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  @@unique([businessId, fingerprint])
+  @@index([businessId, direction, createdAt])
+}
