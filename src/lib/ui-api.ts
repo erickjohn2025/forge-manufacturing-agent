@@ -53,6 +53,13 @@ export type ProcurementView = {
   receipts: ProcurementReceiptView[];
 };
 
+export type MessageView = {
+  id: string; direction: string; channel: string; status: string;
+  fromAddress: string; toAddress: string; counterpart: string; body: string; createdAt: string;
+};
+
+export type MessageLogView = { items: MessageView[]; nextCursor?: string };
+
 export type QuoteView = {
   id: string; supplierName: string; unitPrice: number; currency: string; deliveryDate: string;
   eligible: boolean; reason?: string;
