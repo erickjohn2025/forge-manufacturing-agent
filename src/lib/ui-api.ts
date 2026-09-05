@@ -18,12 +18,20 @@ export type PurchasePaymentView = {
   currency: string;
 };
 
+export type ObjectiveStepView = {
+  domain: "PLAN" | "SOURCE" | "MAKE" | "DELIVER";
+  status: "PENDING" | "ACTIVE" | "WAITING" | "COMPLETED" | "FAILED";
+  title: string;
+  detail?: string;
+};
+
 export type ObjectiveView = {
   id: string;
   text: string;
   status: ObjectiveState;
   createdAt: string;
   events: ObjectiveEvent[];
+  steps: ObjectiveStepView[];
   approval?: ApprovalView;
   quotes: QuoteView[];
   purchaseOrderId?: string;
@@ -31,9 +39,13 @@ export type ObjectiveView = {
   purchaseOrderTotal?: number;
   purchaseOrderCurrency?: string;
   purchaseOrderSupplier?: string;
+  purchaseOrderStatus?: string;
+  purchaseOrderExpectedAt?: string;
   payment?: PurchasePaymentView;
   productionJobId?: string;
   productionJobCode?: string;
+  productionJobStatus?: string;
+  productionJobQuantity?: number;
   summary?: Record<string, string | number>;
 };
 
@@ -75,6 +87,9 @@ export function normalizeObjective(input: unknown): ObjectiveView {
     status: (raw.state ?? raw.status ?? "PLANNING") as ObjectiveState,
     createdAt: text(raw.createdAt, new Date().toISOString()),
     events: [...actionEvents, ...stepEvents],
+    steps: Array.isArray(raw.steps) ? raw.steps.map((step: any) => ({
+      domain: step.domain, status: step.status, title: text(step.title), detail: text(step.detail) || undefined,
+    })) : [],
     quotes: quotes.map((quote: any) => ({
       id: text(quote.id), supplierName: text(quote.supplierName ?? quote.supplier?.name, "Supplier"),
       unitPrice: asNumber(quote.unitPrice), currency: text(quote.currency, "TZS"),
@@ -93,12 +108,16 @@ export function normalizeObjective(input: unknown): ObjectiveView {
     purchaseOrderTotal: po ? asNumber(po.total) : undefined,
     purchaseOrderCurrency: po ? text(po.currency, "TZS") : undefined,
     purchaseOrderSupplier: po ? text(po.supplier?.name, "Supplier") : undefined,
+    purchaseOrderStatus: po ? text(po.status) : undefined,
+    purchaseOrderExpectedAt: po ? text(po.expectedAt) : undefined,
     payment: paymentRaw ? {
       id: text(paymentRaw.id), status: text(paymentRaw.status, "PENDING") as PurchasePaymentView["status"],
       provider: text(paymentRaw.provider, "demo"), amount: asNumber(paymentRaw.amount), currency: text(paymentRaw.currency, "TZS"),
     } : undefined,
     productionJobId: text(job?.id || raw.productionJobId) || undefined,
     productionJobCode: text(job?.code || job?.displayCode || raw.productionJobCode) || undefined,
+    productionJobStatus: job ? text(job.status) : undefined,
+    productionJobQuantity: job ? asNumber(job.plannedQuantity) : undefined,
     summary: raw.summary,
   };
 }

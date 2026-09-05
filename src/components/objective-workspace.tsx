@@ -18,6 +18,16 @@ function eventIcon(status: ObjectiveEvent["status"]) {
   return <ClockIcon />;
 }
 
+function currentActivity(objective: ObjectiveView) {
+  if (objective.status === "COMPLETE") return { title: "Outcome verified", detail: "Every target order is allocated and ready for dispatch.", tone: "complete" };
+  if (objective.status === "BLOCKED" || objective.status === "FAILED") return { title: "Human attention required", detail: "The agent cannot continue until the blocking condition is resolved.", tone: "blocked" };
+  if (objective.status === "WAITING_APPROVAL") return { title: "Waiting for purchase approval", detail: "An authorised approver must approve or reject the selected supplier quote.", tone: "waiting" };
+  if (objective.status === "WAITING_EXTERNAL") return { title: "Waiting for supplier quotations", detail: `${objective.quotes.length} quotation${objective.quotes.length === 1 ? "" : "s"} received so far.`, tone: "waiting" };
+  if (objective.productionJobId && objective.productionJobStatus !== "COMPLETE") return { title: `${objective.productionJobCode ?? "Production job"} is ready`, detail: `${objective.productionJobQuantity?.toLocaleString() ?? "Planned"} units are awaiting production completion.`, tone: "active" };
+  if (objective.purchaseOrderId && objective.purchaseOrderStatus !== "RECEIVED") return { title: `${objective.purchaseOrderCode ?? "Purchase order"} issued — awaiting receipt`, detail: "Materials are incoming and have not been added to available inventory.", tone: "waiting" };
+  return { title: "Agent is planning and coordinating", detail: "Operational tools are running against current manufacturing data.", tone: "active" };
+}
+
 export function ObjectiveWorkspace({ objectiveId }: { objectiveId: string }) {
   const [objective, setObjective] = useState<ObjectiveView | null>(null);
   const [error, setError] = useState("");
@@ -37,6 +47,10 @@ export function ObjectiveWorkspace({ objectiveId }: { objectiveId: string }) {
     stream.addEventListener("state", () => void load());
     return () => stream.close();
   }, [objectiveId, load]);
+  useEffect(() => {
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void load(); }, 3_000);
+    return () => window.clearInterval(timer);
+  }, [load]);
   useEffect(() => {
     if (objective?.payment?.status !== "PENDING" || !objective.purchaseOrderId) return;
     const timer = setInterval(() => {
@@ -58,6 +72,7 @@ export function ObjectiveWorkspace({ objectiveId }: { objectiveId: string }) {
   if (!objective) return <div className="page-error"><AlertIcon /><h2>Objective unavailable</h2><p>{error}</p><button onClick={() => load()}>Try again</button></div>;
 
   const completed = objective.status === "COMPLETE";
+  const activity = currentActivity(objective);
   return <div className="objective-workspace">
     <div className="crumb"><Link href="/objectives">Objectives</Link><span>/</span><span>Objective {objective.id.slice(-6)}</span></div>
     <header className="objective-header">
@@ -68,14 +83,18 @@ export function ObjectiveWorkspace({ objectiveId }: { objectiveId: string }) {
     {error && <div className="banner error"><AlertIcon />{error}</div>}
     {notice && <div className="banner success"><CheckIcon />{notice}<button onClick={() => setNotice("")}>×</button></div>}
 
+    <section className={`current-activity ${activity.tone}`}><span>{activity.tone === "complete" ? <CheckIcon /> : activity.tone === "blocked" ? <AlertIcon /> : <ClockIcon />}</span><div><small>RIGHT NOW</small><strong>{activity.title}</strong><p>{activity.detail}</p></div><i /></section>
+
     {completed && <section className="completion-hero"><span className="completion-check"><CheckIcon /></span><div><span>OBJECTIVE COMPLETE</span><h2>All Friday orders are ready for fulfilment.</h2><p>Your agent verified materials, production, and finished-goods allocation.</p></div></section>}
 
     <div className="domain-rail">{domains.map((domain, index) => {
       const domainEvents = eventsByDomain[domain.id];
-      const hasFailure = domainEvents.some((event) => event.status === "FAILED");
-      const hasWaiting = domainEvents.some((event) => event.status === "WAITING");
-      const isDone = completed || (domainEvents.length > 0 && domainEvents.every((event) => event.status === "COMPLETED"));
-      return <div className={`domain-node ${isDone ? "done" : hasFailure ? "failed" : hasWaiting || domainEvents.length ? "active" : ""}`} key={domain.id}>
+      const step = objective.steps.find((item) => item.domain === domain.id);
+      const hasFailure = step?.status === "FAILED" || domainEvents.some((event) => event.status === "FAILED");
+      const isWaiting = step?.status === "WAITING" || (!step && domainEvents.some((event) => event.status === "WAITING"));
+      const isDone = completed || step?.status === "COMPLETED";
+      const isActive = step?.status === "ACTIVE" || isWaiting;
+      return <div className={`domain-node ${isDone ? "done" : hasFailure ? "failed" : isActive ? "active" : ""}`} key={domain.id}>
         <span className="domain-index">{isDone ? <CheckIcon /> : String(index + 1).padStart(2, "0")}</span><p><strong>{domain.label}</strong><small>{domain.caption}</small></p>{index < domains.length - 1 && <i className="domain-line" />}
       </div>;
     })}</div>
