@@ -1,7 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { db } from "@/lib/db";
 import { apiError } from "@/lib/http";
 import { requireTenant } from "@/lib/tenant";
+
+const patchSchema = z.object({
+  autoPurchaseLimit: z.number().finite().nonnegative().optional(),
+  defaultSafetyStock: z.number().finite().nonnegative().optional(),
+}).refine((value) => value.autoPurchaseLimit !== undefined || value.defaultSafetyStock !== undefined, {
+  message: "Provide autoPurchaseLimit or defaultSafetyStock",
+});
 
 export async function GET() {
   try {
@@ -23,6 +31,24 @@ export async function GET() {
       smsConfigured: process.env.SMS_PROVIDER === "africas-talking" && Boolean(process.env.AFRICASTALKING_API_KEY),
       inboundNumber: business.inboundNumber, smsUsers, callbackUrl, callbackStable,
       demoResetEnabled: process.env.DEMO_MODE === "true",
+    });
+  } catch (error) { return apiError(error); }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const { businessId } = await requireTenant(["ADMIN"]);
+    const input = patchSchema.parse(await request.json());
+    const business = await db.business.update({
+      where: { id: businessId },
+      data: {
+        ...(input.autoPurchaseLimit !== undefined ? { autoPurchaseLimit: input.autoPurchaseLimit } : {}),
+        ...(input.defaultSafetyStock !== undefined ? { defaultSafetyStock: input.defaultSafetyStock } : {}),
+      },
+    });
+    return NextResponse.json({
+      autoPurchaseLimit: Number(business.autoPurchaseLimit),
+      defaultSafetyStock: Number(business.defaultSafetyStock),
     });
   } catch (error) { return apiError(error); }
 }
